@@ -1,16 +1,30 @@
+import express from "express";
 import axios from "axios";
 
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const LOOP_DELAY_MINUTES = process.env.LOOP_DELAY || 5; // waktu antar loop (menit)
-const REQUEST_TIMEOUT = 20000; // timeout tiap GET 15 detik
+const LOOP_DELAY_MINUTES = process.env.LOOP_DELAY || 5;
+const REQUEST_TIMEOUT = 15000;
 
-// fungsi delay sederhana
+const app = express();
+const PORT = process.env.PORT || 10000; // Render akan menetapkan PORT otomatis
+
+// Endpoint dummy (Render butuh ini agar dianggap aktif)
+app.get("/", (req, res) => {
+  res.send("✅ URL Rotator aktif berjalan di background!");
+});
+
+// Jalankan HTTP server
+app.listen(PORT, () => {
+  console.log(`🌐 Web Service aktif di port ${PORT}`);
+  startLoop(); // mulai proses utama setelah web aktif
+});
+
+// Fungsi delay
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getUrlList() {
   try {
     const res = await axios.get(SOURCE_URL, { timeout: 10000 });
-    // pisahkan berdasarkan baris
     const urls = res.data
       .split(/\r?\n/)
       .map(line => line.trim())
@@ -18,7 +32,7 @@ async function getUrlList() {
     console.log(`✅ Ditemukan ${urls.length} URL dari sumber`);
     return urls;
   } catch (err) {
-    console.error(`❌ Gagal membaca list dari ${SOURCE_URL}: ${err.message}`);
+    console.error(`❌ Gagal baca daftar URL: ${err.message}`);
     return [];
   }
 }
@@ -38,7 +52,7 @@ async function hitUrls(urls) {
 }
 
 async function startLoop() {
-  console.log(`🚀 Worker aktif. Membaca URL dari: ${SOURCE_URL}`);
+  console.log(`🚀 Loop dimulai. Membaca URL dari: ${SOURCE_URL}`);
   while (true) {
     const urls = await getUrlList();
     if (urls.length > 0) await hitUrls(urls);
@@ -46,5 +60,3 @@ async function startLoop() {
     await sleep(LOOP_DELAY_MINUTES * 60 * 1000);
   }
 }
-
-startLoop();
