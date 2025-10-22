@@ -1,7 +1,8 @@
 {
   "name": "url-rotator-web",
   "version": "1.0.0",
-  "description": "Render Web Service for GET URL loop",
+  "description": "Render Web Service for looping GET via CORS Anywhere",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
