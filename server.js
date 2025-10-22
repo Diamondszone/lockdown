@@ -11,15 +11,14 @@ const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY || 3);
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 2000);
 const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/,"/");
-const USE_ENCODED = process.env.USE_ENCODED === "1"; // set ke 1 jika proxy kamu butuh URL di-encode
+const USE_ENCODED = process.env.USE_ENCODED === "1"; // set "1" jika proxy butuh encoded URL
 
-// ====== IPv4 dulu (hindari rute IPv6 yang lambat) ======
+// ====== Prefer IPv4 (tanpa override lookup untuk hindari bug "Invalid IP address: undefined") ======
 dns.setDefaultResultOrder?.("ipv4first");
-const lookup4 = (hostname, opts, cb) => dns.lookup(hostname, { family: 4 }, cb);
 
-// ====== Agents (keep-alive) ======
-const httpAgent  = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50, lookup: lookup4 });
-const httpsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50, lookup: lookup4 });
+// ====== Keep-alive agents ======
+const httpAgent  = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50 });
+const httpsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50 });
 
 // ====== Headers mirip browser ======
 const USER_AGENTS = [
@@ -48,21 +47,24 @@ function browserHeaders(targetUrl) {
 }
 
 function viaCors(targetUrl) {
+  // banyak deployment cors-anywhere: target URL dibiarkan apa adanya
+  // jika butuh encoded, set USE_ENCODED=1
   return CORS_PROXY + (USE_ENCODED ? encodeURIComponent(targetUrl) : targetUrl);
 }
 
+// ====== Axios client ======
 const axiosClient = axios.create({
   timeout: REQUEST_TIMEOUT,
   maxRedirects: 5,
   httpAgent,
   httpsAgent,
   decompress: true,
-  validateStatus: s => s >= 200 && s < 400, // anggap 3xx juga OK
+  validateStatus: s => s >= 200 && s < 400, // anggap 2xx & 3xx = sukses
   maxContentLength: 5 * 1024 * 1024,
   maxBodyLength: 5 * 1024 * 1024
 });
 
-// ====== Web Service (agar Render tidak tidur) ======
+// ====== Web Service agar Render tidak tidur ======
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -85,7 +87,8 @@ async function fetchList() {
     console.log(`✅ Ditemukan ${urls.length} URL dari sumber`);
     return urls;
   } catch (e) {
-    console.error(`❌ Gagal baca daftar URL: ${e.message}`);
+    console.error(`❌ Gagal baca daftar URL: ${e?.message || e}`);
+    if (e?.stack) console.log(e.stack.split("\n").slice(0,2).join("\n"));
     return [];
   }
 }
@@ -99,7 +102,8 @@ async function timed(method, url, headers) {
     return true;
   } catch (e) {
     const ms = Date.now() - t0;
-    console.log(`  ❌ ${method} error after ${ms}ms: ${e.message}`);
+    console.log(`  ❌ ${method} error after ${ms}ms: ${e?.message || e}`);
+    if (e?.stack) console.log(e.stack.split("\n").slice(0,2).join("\n"));
     return false;
   }
 }
@@ -138,4 +142,3 @@ async function startLoop() {
     await sleep(LOOP_DELAY_MINUTES * 60 * 1000);
   }
 }
-
