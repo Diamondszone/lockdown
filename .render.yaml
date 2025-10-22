@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: url-rotator
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    autoDeploy: true
+    envVars:
+      - key: SOURCE_URL
+        value: "https://domainsaya.com/node.txt"
+      - key: LOOP_DELAY
+        value: "5"
