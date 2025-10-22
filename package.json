@@ -1,12 +1,13 @@
 {
-  "name": "url-rotator",
+  "name": "url-rotator-web",
   "version": "1.0.0",
-  "description": "Render worker untuk GET URL rotasi",
+  "description": "Render Web Service for GET URL loop",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.7.4"
+    "axios": "^1.7.4",
+    "express": "^4.19.2"
   }
 }
