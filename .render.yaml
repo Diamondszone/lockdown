@@ -7,7 +7,7 @@ services:
     startCommand: "node server.js"
     envVars:
       - key: SOURCE_URL
-        value: "https://domainsaya.com/node.txt"
+        value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"
       - key: LOOP_DELAY
         value: "3"
       - key: REQUEST_TIMEOUT
