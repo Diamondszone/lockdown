@@ -1,0 +1,12 @@
+{
+  "name": "url-rotator",
+  "version": "1.0.0",
+  "description": "Render worker untuk GET URL rotasi",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.4"
+  }
+}
