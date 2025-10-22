@@ -2,8 +2,8 @@ import express from "express";
 import axios from "axios";
 
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const LOOP_DELAY_MINUTES = process.env.LOOP_DELAY || 5;
-const REQUEST_TIMEOUT = 15000;
+const LOOP_DELAY_MINUTES = process.env.LOOP_DELAY || 3;
+const REQUEST_TIMEOUT = 60000;
 
 const app = express();
 const PORT = process.env.PORT || 10000; // Render akan menetapkan PORT otomatis
@@ -60,3 +60,4 @@ async function startLoop() {
     await sleep(LOOP_DELAY_MINUTES * 60 * 1000);
   }
 }
+
