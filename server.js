@@ -47,7 +47,7 @@ async function hitUrls(urls) {
     } catch (err) {
       console.log(`  ❌ Error: ${err.message}`);
     }
-    await sleep(2000); // jeda 2 detik antar URL
+    await sleep(1000); // jeda 1 detik antar URL
   }
 }
 
@@ -60,4 +60,5 @@ async function startLoop() {
     await sleep(LOOP_DELAY_MINUTES * 60 * 1000);
   }
 }
+
 
