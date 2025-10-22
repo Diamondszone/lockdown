@@ -9,4 +9,4 @@ services:
       - key: SOURCE_URL
         value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"
       - key: LOOP_DELAY
-        value: "5"
+        value: "3"
