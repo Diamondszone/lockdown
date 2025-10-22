@@ -1,11 +1,10 @@
 services:
-  - type: worker
-    name: url-rotator
+  - type: web
+    name: url-rotator-web
     env: node
     plan: free
     buildCommand: "npm install"
     startCommand: "node server.js"
-    autoDeploy: true
     envVars:
       - key: SOURCE_URL
         value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"
