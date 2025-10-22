@@ -7,7 +7,7 @@ services:
     startCommand: "node server.js"
     envVars:
       - key: SOURCE_URL
-        value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"
+        value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"   # ganti dengan URL node.txt kamu
       - key: LOOP_DELAY
         value: "3"
       - key: REQUEST_TIMEOUT
@@ -16,6 +16,6 @@ services:
         value: "2000"
       - key: CORS_PROXY
         value: "https://cors-anywhere-vercel-dzone.vercel.app/"
-      # set ini ke "1" kalau proxy kamu butuh target URL di-encodeURIComponent
+      # set "1" jika proxy kamu butuh target URL di-encodeURIComponent
       - key: USE_ENCODED
         value: "0"
