@@ -5,11 +5,16 @@ import https from "https";
 import dns from "dns";
 import { URL } from "url";
 
+import path from "path";
+import { fileURLToPath } from "url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+
 // ====== ENV ======
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY || 3);
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
-const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 2000);
+const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 1000);
 const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/,"/");
 const USE_ENCODED = process.env.USE_ENCODED === "1"; // set "1" jika proxy butuh encoded URL
 
@@ -68,7 +73,10 @@ const axiosClient = axios.create({
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-app.get("/", (req, res) => res.send("✅ URL Rotator via CORS-anywhere aktif 24/7."));
+// app.get("/", (req, res) => res.send("✅ URL Rotator via CORS-anywhere aktif 24/7."));
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 app.listen(PORT, () => {
   console.log(`🌐 Web Service aktif di port ${PORT}`);
   startLoop();
