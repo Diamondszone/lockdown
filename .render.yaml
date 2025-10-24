@@ -9,7 +9,7 @@ services:
       - key: SOURCE_URL
         value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"   # ganti dengan URL node.txt kamu
       - key: LOOP_DELAY
-        value: "3"
+        value: "1"
       - key: REQUEST_TIMEOUT
         value: "60000"
       - key: PER_URL_DELAY_MS
