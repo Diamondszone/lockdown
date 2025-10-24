@@ -15,26 +15,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * ========================= */
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
-const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 1000);
+const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 0); // default: tanpa jeda per URL
 const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "/");
 const USE_ENCODED = process.env.USE_ENCODED === "1"; // set "1" jika proxy perlu encoded target
 
-// Opsi jeda loop (prioritas: MS > SEC > MIN). Default 60.000 ms (1 menit)
+// Opsi jeda loop (prioritas: MS > SEC > MIN). Default: 0 ms (langsung lanjut)
 const _LOOP_DELAY_MS  = process.env.LOOP_DELAY_MS ?? "";
 const _LOOP_DELAY_SEC = process.env.LOOP_DELAY_SEC ?? "";
 const _LOOP_DELAY_MIN = process.env.LOOP_DELAY ?? "";
 const LOOP_SLEEP_MS =
   _LOOP_DELAY_MS  !== "" ? Math.max(0, Number(_LOOP_DELAY_MS)) :
   _LOOP_DELAY_SEC !== "" ? Math.max(0, Number(_LOOP_DELAY_SEC) * 1000) :
-  (_LOOP_DELAY_MIN !== "" ? Math.max(0, Number(_LOOP_DELAY_MIN) * 60 * 1000) : 60_000);
+  (_LOOP_DELAY_MIN !== "" ? Math.max(0, Number(_LOOP_DELAY_MIN) * 60 * 1000) : 0);
 
 /* =========================
  * Network Prefs & Agents
  * ========================= */
-// Prefer IPv4 (hindari bug "Invalid IP address: undefined" pada beberapa platform)
-dns.setDefaultResultOrder?.("ipv4first");
-
-// Keep-alive agents
+dns.setDefaultResultOrder?.("ipv4first"); // hindari bug "Invalid IP address: undefined"
 const httpAgent  = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50 });
 const httpsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50 });
 
@@ -67,7 +64,6 @@ function browserHeaders(targetUrl) {
 }
 
 function viaCors(targetUrl) {
-  // Banyak deploy cors-anywhere bisa langsung; kalau perlu encoded, set USE_ENCODED=1
   return CORS_PROXY + (USE_ENCODED ? encodeURIComponent(targetUrl) : targetUrl);
 }
 
@@ -80,7 +76,7 @@ const axiosClient = axios.create({
   httpAgent,
   httpsAgent,
   decompress: true,
-  validateStatus: s => s >= 200 && s < 400, // anggap 2xx dan 3xx = sukses
+  validateStatus: s => s >= 200 && s < 400, // 2xx & 3xx = sukses
   maxContentLength: 5 * 1024 * 1024,
   maxBodyLength: 5 * 1024 * 1024
 });
@@ -92,7 +88,8 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html")); // pastikan ada public/index.html
+  // pastikan ada file public/index.html
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.listen(PORT, () => {
@@ -132,7 +129,6 @@ async function timed(method, url, headers) {
     const ms = Date.now() - t0;
     console.log(`  ❌ ${method} error after ${ms}ms: ${e?.message || e}`);
     if (e?.stack) console.log(e.stack.split("\n").slice(0, 2).join("\n"));
-    // Jika ada response, kembalikan status untuk keputusan retry/backoff
     const status = e?.response?.status ?? 0;
     return { ok: false, status };
   }
@@ -150,7 +146,6 @@ async function hitWithRetry(url) {
   console.log(`[${new Date().toLocaleString()}] 🔁 GET (via CORS) ${url}`);
   let { ok, status } = await hitOnce(url);
   if (!ok) {
-    // Simple backoff jika 429/5xx
     const backoff = (status === 429 || status >= 500) ? 1500 : 500;
     await sleep(backoff);
     console.log(`  ↻ Retry (${backoff}ms): ${url}`);
@@ -161,9 +156,7 @@ async function hitWithRetry(url) {
 async function processAll(urls) {
   for (const url of urls) {
     await hitWithRetry(url);
-    if (PER_URL_DELAY_MS > 0) {
-      await sleep(PER_URL_DELAY_MS);
-    }
+    if (PER_URL_DELAY_MS > 0) await sleep(PER_URL_DELAY_MS);
   }
 }
 
@@ -173,8 +166,14 @@ async function startLoop() {
   while (true) {
     const list = await fetchList();
     if (list.length) await processAll(list);
-    const mins = (LOOP_SLEEP_MS / 60000).toFixed(3);
-    console.log(`🕒 Menunggu ~${mins} menit (${LOOP_SLEEP_MS} ms) sebelum loop berikutnya...\n`);
-    await sleep(LOOP_SLEEP_MS);
+
+    if (LOOP_SLEEP_MS > 0) {
+      const mins = (LOOP_SLEEP_MS / 60000).toFixed(3);
+      console.log(`🕒 Menunggu ~${mins} menit (${LOOP_SLEEP_MS} ms) sebelum loop berikutnya...\n`);
+      await sleep(LOOP_SLEEP_MS);
+    } else {
+      // tanpa jeda: lanjut segera, tapi yield 1 tick agar event loop tetap responsif
+      await new Promise((r) => setImmediate(r));
+    }
   }
 }
