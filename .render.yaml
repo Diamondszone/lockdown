@@ -13,7 +13,7 @@ services:
       - key: REQUEST_TIMEOUT
         value: "60000"
       - key: PER_URL_DELAY_MS
-        value: "2000"
+        value: "1000"
       - key: CORS_PROXY
         value: "https://cors-anywhere-vercel-dzone.vercel.app/"
       # set "1" jika proxy kamu butuh target URL di-encodeURIComponent
