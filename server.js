@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ====== ENV ======
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY || 3);
+const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY || 1);
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 1000);
 const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/,"/");
@@ -150,3 +150,4 @@ async function startLoop() {
     await sleep(LOOP_DELAY_MINUTES * 60 * 1000);
   }
 }
+
