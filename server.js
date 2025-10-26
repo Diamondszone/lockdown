@@ -16,10 +16,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_URL        = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 const REQUEST_TIMEOUT   = Number(process.env.REQUEST_TIMEOUT || 60000);
 const PER_URL_DELAY_MS  = Number(process.env.PER_URL_DELAY_MS || 0);
-const CORS_PROXY        = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "/");
-const USE_ENCODED       = process.env.USE_ENCODED === "1"; // set "1" jika proxy perlu encoded target
 
-// Opsi jeda loop (prioritas: MS > SEC > MIN). Default: 0 ms (langsung lanjut)
+// Single proxy fallback
+const _CORS_PROXY       = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "");
+
+// Multi-proxy (baru)
+const CORS_PROXIES      = (process.env.CORS_PROXIES || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean)
+  .map(s => s.replace(/\/+$/, ""));
+if (CORS_PROXIES.length === 0) CORS_PROXIES.push(_CORS_PROXY);
+
+const PROXY_FAIL_COOLDOWN_MS = Number(process.env.PROXY_FAIL_COOLDOWN_MS || 60_000);
+
+// Loop delay (prioritas: MS > SEC > MIN). Default: 0 ms
 const _LOOP_DELAY_MS  = process.env.LOOP_DELAY_MS ?? "";
 const _LOOP_DELAY_SEC = process.env.LOOP_DELAY_SEC ?? "";
 const _LOOP_DELAY_MIN = process.env.LOOP_DELAY ?? "";
@@ -36,7 +47,7 @@ const AGENT_RESET_EVERY    = Number(process.env.AGENT_RESET_EVERY || 250); // re
 /* =========================
  * Network Prefs & Agents (dinamis)
  * ========================= */
-dns.setDefaultResultOrder?.("ipv4first"); // hindari bug "Invalid IP address: undefined"
+dns.setDefaultResultOrder?.("ipv4first");
 
 let httpAgent = null;
 let httpsAgent = null;
@@ -61,13 +72,14 @@ function makeAxios() {
     httpAgent,
     httpsAgent,
     decompress: true,
-    validateStatus: () => true, // kita nilai sendiri (200 + JSON = success)
+    validateStatus: () => true, // nilai sendiri (200 + JSON = success)
     maxContentLength: 5 * 1024 * 1024,
-    maxBodyLength: 5 * 1024 * 1024
+    maxBodyLength: 5 * 1024 * 1024,
+    transformResponse: [(data) => data] // biar bisa ambil snippet raw body
   });
 }
 
-// inisialisasi awal
+// init awal
 axiosClient = makeAxios();
 
 /* =========================
@@ -85,7 +97,7 @@ const randomUA = () => USER_AGENTS[rand(USER_AGENTS.length)];
 function browserHeaders(targetUrl) {
   const u = new URL(targetUrl);
   return {
-    "Origin": "https://yourdomain.com",
+    "Origin": `${u.protocol}//${u.host}`,
     "X-Requested-With": "XMLHttpRequest",
     "User-Agent": randomUA(),
     "Accept": "application/json,text/plain,*/*",
@@ -98,18 +110,60 @@ function browserHeaders(targetUrl) {
   };
 }
 
-function viaCors(targetUrl) {
-  return CORS_PROXY + (USE_ENCODED ? encodeURIComponent(targetUrl) : targetUrl);
+/* =========================
+ * Proxy rotation helpers
+ * ========================= */
+const proxyCooldownUntil = new Map(); // proxyBase -> timestamp ms
+let proxyIndex = 0;
+
+function isProxyOnCooldown(base) {
+  const until = proxyCooldownUntil.get(base) || 0;
+  return Date.now() < until;
+}
+function cooldownProxy(base) {
+  proxyCooldownUntil.set(base, Date.now() + PROXY_FAIL_COOLDOWN_MS);
+  console.log(`🚫 Proxy cooldown ${base} for ${PROXY_FAIL_COOLDOWN_MS} ms`);
+}
+function nextHealthyProxy() {
+  const n = CORS_PROXIES.length;
+  for (let i = 0; i < n; i++) {
+    const idx = (proxyIndex + i) % n;
+    const base = CORS_PROXIES[idx];
+    if (!isProxyOnCooldown(base)) {
+      proxyIndex = idx; // point ke sini
+      return base;
+    }
+  }
+  // semua cooldown → pilih yang cooldown-nya paling cepat berakhir
+  let soonestBase = CORS_PROXIES[0], soonest = proxyCooldownUntil.get(soonestBase) || 0;
+  for (const b of CORS_PROXIES) {
+    const t = proxyCooldownUntil.get(b) || 0;
+    if (t < soonest) { soonest = t; soonestBase = b; }
+  }
+  return soonestBase;
 }
 
 /* =========================
- * Web Service (agar Render stay-awake)
+ * Format proxy khusus: ".../<https:/domain/...>"
+ * ========================= */
+// Ubah "https://" -> "https:/" dan "http://" -> "http:/"
+function normalizeForSingleSlashScheme(targetUrl) {
+  return String(targetUrl).replace(/^https?:\/\//i, (m) => m.replace(/\/+$/, "/"));
+}
+// Selalu hasilkan: <proxy_base>/<https:/domain/...>
+function viaCorsWith(base, targetUrl) {
+  const cleanBase = String(base).replace(/\/+$/, ""); // buang trailing slash pada base
+  const normTarget = normalizeForSingleSlashScheme(targetUrl); // jadikan https:/...
+  return `${cleanBase}/${normTarget}`;
+}
+
+/* =========================
+ * Web Service (agar stay-awake)
  * ========================= */
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  // pastikan ada file public/index.html
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
@@ -125,15 +179,13 @@ const sleep  = (ms) => new Promise(r => setTimeout(r, ms));
 const jitter = (min=1, max=50) => Math.floor(Math.random()*(max-min+1))+min;
 
 function newCacheBuster() {
-  // timestamp + 8 hex random → minimalisir cache agresif di sisi proxy
   const rnd = crypto.randomBytes(4).toString("hex");
   return `${Date.now()}_${rnd}`;
 }
 
-// rekreasi axios/agents berkala agar koneksi stale tidak menumpuk
 function maybeRefreshClient() {
   _reqCountSinceReset++;
-  if (!KEEP_ALIVE) return; // kalau keepalive OFF, tak perlu reset
+  if (!KEEP_ALIVE) return;
   if (_reqCountSinceReset >= AGENT_RESET_EVERY) {
     try { httpAgent?.destroy?.(); httpsAgent?.destroy?.(); } catch {}
     axiosClient = makeAxios();
@@ -176,12 +228,16 @@ async function timed(method, url, headers, { forceClose = false } = {}) {
       method,
       url,
       headers: forceClose ? { ...headers, Connection: "close" } : headers,
-      // jika forceClose, override agent supaya koneksi baru (tanpa keep-alive)
       httpAgent: forceClose ? undefined : httpAgent,
       httpsAgent: forceClose ? undefined : httpsAgent,
+      validateStatus: () => true
     });
     const ms = Date.now() - t0;
     const status = res.status ?? 0;
+
+    let bodySnippet = "";
+    try { if (typeof res.data === "string") bodySnippet = res.data.slice(0, 200); } catch {}
+
     const json = isJsonResponse(res);
     const ok = status === 200 && json;
 
@@ -194,51 +250,107 @@ async function timed(method, url, headers, { forceClose = false } = {}) {
       console.log(`  ⚠️  ${method} not success (${why}) in ${ms}ms`);
     }
 
-    return { ok, status, isJson: json };
+    return { ok, status, isJson: json, ms, bodySnippet, res };
   } catch (e) {
     const ms = Date.now() - t0;
     const status = e?.response?.status ?? 0;
     const code = e?.code || "UNKNOWN";
     console.log(`  ❌ ${method} error after ${ms}ms: ${e?.message || e} (code=${code})`);
-    return { ok: false, status, isJson: false, code };
+    return { ok: false, status, isJson: false, code, ms, res: e?.response };
   } finally {
     maybeRefreshClient();
   }
 }
 
-async function hitOnce(rawUrl, opts = {}) {
+async function hitOnce(rawUrl, baseProxy, opts = {}) {
   const u = new URL(rawUrl);
-  u.searchParams.set("t", newCacheBuster()); // cache-buster lebih unik
-  const proxied = viaCors(u.toString());
-  const hdrs = browserHeaders(u.toString());
+  u.searchParams.set("t", newCacheBuster());
+  const original = u.toString();                    // headers pakai bentuk normal
+  const proxied  = viaCorsWith(baseProxy, original); // path proxy pakai "https:/"
+
+  const hdrs = browserHeaders(original);
   return timed("GET", proxied, hdrs, opts);
+}
+
+function looksLikeProxy403(res, elapsedMs, bodySnippet) {
+  const status = res?.status;
+  if (status !== 403) return false;
+  if (elapsedMs < 50) return true; // super cepat → kemungkinan ditolak di edge/proxy
+
+  const h = Object.fromEntries(
+    Object.entries(res?.headers || {}).map(([k, v]) => [String(k).toLowerCase(), v])
+  );
+  const via = String(h["via"] || "");
+  const server = String(h["server"] || "");
+  const xpower = String(h["x-powered-by"] || "");
+  if (/vercel|cloudflare|fly|heroku|nginx/i.test(via + " " + server + " " + xpower)) return true;
+
+  const b = (bodySnippet || "").toLowerCase();
+  if (b.includes("cors") || b.includes("forbidden") || b.includes("missing required request header")) return true;
+
+  return false;
 }
 
 async function hitWithRetry(url) {
   console.log(`[${new Date().toLocaleString()}] 🔁 GET (via CORS) ${url}`);
 
-  // coba normal
-  let res = await hitOnce(url);
+  // daftar proxy yang akan dicoba (mulai dari current healthy, lalu sisanya)
+  const startBase = nextHealthyProxy();
+  const bases = [];
+  const n = CORS_PROXIES.length;
+  const startIdx = CORS_PROXIES.indexOf(startBase);
+  for (let i = 0; i < n; i++) {
+    const idx = (startIdx + i) % n;
+    bases.push(CORS_PROXIES[idx]);
+  }
 
-  if (!res.ok) {
-    // jika error jaringan umum, coba lagi dengan Connection: close + tanpa agent
-    const transient = ["ECONNRESET", "EPIPE", "ETIMEDOUT", "ECONNABORTED"];
-    const needHardRetry = transient.includes(res.code) || res.status >= 500 || res.status === 429;
+  let lastRes = null;
 
-    const backoff = needHardRetry ? 700 + jitter(0, 400) : 300 + jitter(0, 200);
+  for (let i = 0; i < bases.length; i++) {
+    const base = bases[i];
+    if (isProxyOnCooldown(base)) continue;
+
+    // 1) coba normal
+    let r = await hitOnce(url, base);
+    lastRes = r;
+
+    const proxyLike403 = r && looksLikeProxy403(r.res, r.ms, r.bodySnippet);
+
+    if (r.ok) {
+      proxyIndex = CORS_PROXIES.indexOf(base);
+      console.log(`  🎯 SUCCESS: 200 + JSON via ${base} => ${url}`);
+      await sleep(jitter());
+      return;
+    }
+
+    // 2) retry pakai Connection: close (masih proxy yang sama)
+    const needHardRetry = proxyLike403 || r.status >= 500 || r.status === 429 || ["ECONNRESET","EPIPE","ETIMEDOUT","ECONNABORTED"].includes(r.code);
+    const backoff = needHardRetry ? 600 + jitter(0, 300) : 300 + jitter(0, 200);
+    console.log(`  ↻ Retry (${backoff}ms) on ${base} (forceClose=${needHardRetry}) : ${url}`);
     await sleep(backoff);
-    console.log(`  ↻ Retry (${backoff}ms, forceClose=${needHardRetry}) : ${url}`);
+    r = await hitOnce(url, base, { forceClose: needHardRetry });
+    lastRes = r;
 
-    res = await hitOnce(url, { forceClose: needHardRetry });
+    if (r.ok) {
+      proxyIndex = CORS_PROXIES.indexOf(base);
+      console.log(`  🎯 SUCCESS (retry): 200 + JSON via ${base} => ${url}`);
+      await sleep(jitter());
+      return;
+    }
+
+    // 3) kalau kelihatan 403 dari proxy, cooldown proxy ini dan coba berikutnya
+    if (proxyLike403 || r.status === 403) {
+      cooldownProxy(base);
+    }
+
+    // lanjut ke proxy lain
   }
 
-  if (res.ok) {
-    console.log(`  🎯 SUCCESS: 200 + JSON => ${url}`);
-  } else {
-    console.log(`  🛑 FAILED: ${url} (status=${res.status}, json=${res.isJson}, code=${res.code || "-"})`);
-  }
-
-  // mikro-jeda acak agar tidak burst di proxy
+  // semua proxy gagal
+  const st = lastRes?.status ?? "-";
+  const js = lastRes?.isJson ?? false;
+  const code = lastRes?.code || "-";
+  console.log(`  🛑 FAILED (all proxies): ${url} (status=${st}, json=${js}, code=${code})`);
   await sleep(jitter());
 }
 
@@ -250,7 +362,8 @@ async function processAll(urls) {
 }
 
 async function startLoop() {
-  console.log(`🚀 Loop dimulai | SOURCE_URL: ${SOURCE_URL} | CORS_PROXY: ${CORS_PROXY} | encoded=${USE_ENCODED}`);
+  console.log(`🚀 Loop dimulai | SOURCE_URL: ${SOURCE_URL}`);
+  console.log(`🛰️  Proxies: ${CORS_PROXIES.join(", ")}`);
   console.log(`⏱️ Konfigurasi jeda: PER_URL_DELAY_MS=${PER_URL_DELAY_MS} | LOOP_SLEEP_MS=${LOOP_SLEEP_MS} (~${(LOOP_SLEEP_MS/60000).toFixed(3)} menit)`);
   while (true) {
     if (RECREATE_EACH_LOOP) {
@@ -268,7 +381,6 @@ async function startLoop() {
       console.log(`🕒 Menunggu ~${mins} menit (${LOOP_SLEEP_MS} ms) sebelum loop berikutnya...\n`);
       await sleep(LOOP_SLEEP_MS);
     } else {
-      // tanpa jeda: lanjut segera, tapi yield 1 tick agar event loop tetap responsif
       await new Promise((r) => setImmediate(r));
     }
   }
