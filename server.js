@@ -25,8 +25,7 @@ const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
 // Jeda antar-batch (ms) agar aman; 0 = tanpa jeda
 const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 250);
 
-// Paralel terbatas (batched): banyaknya request sekaligus per batch (>=1)
-const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY || 10));
+const CONCURRENCY = Number(process.env.CONCURRENCY || 0); // boleh 0 (0= jalan semuanya sekaligus)
 
 /* =========================
  * Axios client (keep-alive)
@@ -142,13 +141,30 @@ async function hitOne(targetUrl) {
 }
 
 // Paralel terbatas (batched)
+// async function runBatched(urls) {
+//   for (let i = 0; i < urls.length; i += CONCURRENCY) {
+//     const chunk = urls.slice(i, i + CONCURRENCY);
+//     await Promise.all(chunk.map((u) => hitOne(u)));
+//     if (PER_URL_DELAY_MS > 0) await sleep(PER_URL_DELAY_MS);
+//   }
+// }
+
 async function runBatched(urls) {
+  if (urls.length === 0) return;
+
+  if (CONCURRENCY <= 0) {
+    // full parallel (semua sekaligus)
+    await Promise.all(urls.map(u => hitOne(u)));
+    return;
+  }
+
   for (let i = 0; i < urls.length; i += CONCURRENCY) {
     const chunk = urls.slice(i, i + CONCURRENCY);
-    await Promise.all(chunk.map((u) => hitOne(u)));
+    await Promise.all(chunk.map(u => hitOne(u)));
     if (PER_URL_DELAY_MS > 0) await sleep(PER_URL_DELAY_MS);
   }
 }
+
 
 async function mainLoop() {
   console.log(
@@ -207,3 +223,4 @@ mainLoop().catch((e) => {
   console.error("Fatal error:", e);
   process.exit(1);
 });
+
