@@ -4,8 +4,8 @@ import axios from "axios";
 import http from "http";
 import https from "https";
 import dns from "dns";
+import crypto from "crypto";
 import { URL } from "url";
-
 import path from "path";
 import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,11 +13,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /* =========================
  * ENV & Konfigurasi
  * ========================= */
-const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
-const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 0); // default: tanpa jeda per URL
-const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "/");
-const USE_ENCODED = process.env.USE_ENCODED === "1"; // set "1" jika proxy perlu encoded target
+const SOURCE_URL        = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
+const REQUEST_TIMEOUT   = Number(process.env.REQUEST_TIMEOUT || 60000);
+const PER_URL_DELAY_MS  = Number(process.env.PER_URL_DELAY_MS || 0);
+const CORS_PROXY        = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "/");
+const USE_ENCODED       = process.env.USE_ENCODED === "1"; // set "1" jika proxy perlu encoded target
 
 // Opsi jeda loop (prioritas: MS > SEC > MIN). Default: 0 ms (langsung lanjut)
 const _LOOP_DELAY_MS  = process.env.LOOP_DELAY_MS ?? "";
@@ -28,12 +28,47 @@ const LOOP_SLEEP_MS =
   _LOOP_DELAY_SEC !== "" ? Math.max(0, Number(_LOOP_DELAY_SEC) * 1000) :
   (_LOOP_DELAY_MIN !== "" ? Math.max(0, Number(_LOOP_DELAY_MIN) * 60 * 1000) : 0);
 
+// Stabilitas koneksi
+const KEEP_ALIVE           = process.env.KEEP_ALIVE !== "0";            // default ON
+const RECREATE_EACH_LOOP   = process.env.RECREATE_EACH_LOOP === "1";    // recreate axios tiap loop
+const AGENT_RESET_EVERY    = Number(process.env.AGENT_RESET_EVERY || 250); // recreate setelah N request
+
 /* =========================
- * Network Prefs & Agents
+ * Network Prefs & Agents (dinamis)
  * ========================= */
 dns.setDefaultResultOrder?.("ipv4first"); // hindari bug "Invalid IP address: undefined"
-const httpAgent  = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50 });
-const httpsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50 });
+
+let httpAgent = null;
+let httpsAgent = null;
+let axiosClient = null;
+let _reqCountSinceReset = 0;
+
+function makeAgents() {
+  if (!KEEP_ALIVE) return { httpAgent: undefined, httpsAgent: undefined };
+  return {
+    httpAgent: new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50, maxFreeSockets: 10 }),
+    httpsAgent: new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 50, maxFreeSockets: 10 })
+  };
+}
+
+function makeAxios() {
+  const agents = makeAgents();
+  httpAgent = agents.httpAgent || null;
+  httpsAgent = agents.httpsAgent || null;
+  return axios.create({
+    timeout: REQUEST_TIMEOUT,
+    maxRedirects: 5,
+    httpAgent,
+    httpsAgent,
+    decompress: true,
+    validateStatus: () => true, // kita nilai sendiri (200 + JSON = success)
+    maxContentLength: 5 * 1024 * 1024,
+    maxBodyLength: 5 * 1024 * 1024
+  });
+}
+
+// inisialisasi awal
+axiosClient = makeAxios();
 
 /* =========================
  * Headers mirip browser
@@ -68,21 +103,6 @@ function viaCors(targetUrl) {
 }
 
 /* =========================
- * Axios client
- * ========================= */
-const axiosClient = axios.create({
-  timeout: REQUEST_TIMEOUT,
-  maxRedirects: 5,
-  httpAgent,
-  httpsAgent,
-  decompress: true,
-  // Jangan biarkan axios melempar berdasarkan status; kita nilai sendiri (200+JSON = sukses)
-  validateStatus: () => true,
-  maxContentLength: 5 * 1024 * 1024,
-  maxBodyLength: 5 * 1024 * 1024
-});
-
-/* =========================
  * Web Service (agar Render stay-awake)
  * ========================= */
 const app = express();
@@ -101,7 +121,26 @@ app.listen(PORT, () => {
 /* =========================
  * Utils
  * ========================= */
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep  = (ms) => new Promise(r => setTimeout(r, ms));
+const jitter = (min=1, max=50) => Math.floor(Math.random()*(max-min+1))+min;
+
+function newCacheBuster() {
+  // timestamp + 8 hex random → minimalisir cache agresif di sisi proxy
+  const rnd = crypto.randomBytes(4).toString("hex");
+  return `${Date.now()}_${rnd}`;
+}
+
+// rekreasi axios/agents berkala agar koneksi stale tidak menumpuk
+function maybeRefreshClient() {
+  _reqCountSinceReset++;
+  if (!KEEP_ALIVE) return; // kalau keepalive OFF, tak perlu reset
+  if (_reqCountSinceReset >= AGENT_RESET_EVERY) {
+    try { httpAgent?.destroy?.(); httpsAgent?.destroy?.(); } catch {}
+    axiosClient = makeAxios();
+    _reqCountSinceReset = 0;
+    console.log(`♻️  Agents/axios direfresh setelah ${AGENT_RESET_EVERY} request`);
+  }
+}
 
 async function fetchList() {
   try {
@@ -122,30 +161,25 @@ async function fetchList() {
 
 function isJsonResponse(res) {
   try {
-    // 1) Cek header Content-Type
     const ct = String(res.headers?.["content-type"] || "").toLowerCase();
     if (ct.includes("application/json")) return true;
-
-    // 2) Cek bentuk data
-    if (res.data !== null && typeof res.data === "object" && !Buffer.isBuffer(res.data)) {
-      return true;
-    }
-
-    // 3) Coba parse jika string
-    if (typeof res.data === "string") {
-      JSON.parse(res.data);
-      return true;
-    }
-  } catch (_) {
-    // parse gagal -> bukan JSON valid
-  }
+    if (res.data !== null && typeof res.data === "object" && !Buffer.isBuffer(res.data)) return true;
+    if (typeof res.data === "string") { JSON.parse(res.data); return true; }
+  } catch {}
   return false;
 }
 
-async function timed(method, url, headers) {
+async function timed(method, url, headers, { forceClose = false } = {}) {
   const t0 = Date.now();
   try {
-    const res = await axiosClient.request({ method, url, headers });
+    const res = await axiosClient.request({
+      method,
+      url,
+      headers: forceClose ? { ...headers, Connection: "close" } : headers,
+      // jika forceClose, override agent supaya koneksi baru (tanpa keep-alive)
+      httpAgent: forceClose ? undefined : httpAgent,
+      httpsAgent: forceClose ? undefined : httpsAgent,
+    });
     const ms = Date.now() - t0;
     const status = res.status ?? 0;
     const json = isJsonResponse(res);
@@ -164,36 +198,48 @@ async function timed(method, url, headers) {
   } catch (e) {
     const ms = Date.now() - t0;
     const status = e?.response?.status ?? 0;
-    console.log(`  ❌ ${method} error after ${ms}ms: ${e?.message || e}`);
-    if (e?.stack) console.log(e.stack.split("\n").slice(0, 2).join("\n"));
-    return { ok: false, status, isJson: false };
+    const code = e?.code || "UNKNOWN";
+    console.log(`  ❌ ${method} error after ${ms}ms: ${e?.message || e} (code=${code})`);
+    return { ok: false, status, isJson: false, code };
+  } finally {
+    maybeRefreshClient();
   }
 }
 
-async function hitOnce(rawUrl) {
+async function hitOnce(rawUrl, opts = {}) {
   const u = new URL(rawUrl);
-  u.searchParams.set("t", Date.now().toString()); // cache-buster
+  u.searchParams.set("t", newCacheBuster()); // cache-buster lebih unik
   const proxied = viaCors(u.toString());
   const hdrs = browserHeaders(u.toString());
-  return timed("GET", proxied, hdrs);
+  return timed("GET", proxied, hdrs, opts);
 }
 
 async function hitWithRetry(url) {
   console.log(`[${new Date().toLocaleString()}] 🔁 GET (via CORS) ${url}`);
+
+  // coba normal
   let res = await hitOnce(url);
 
   if (!res.ok) {
-    const backoff = (res.status === 429 || res.status >= 500) ? 1500 : 700;
+    // jika error jaringan umum, coba lagi dengan Connection: close + tanpa agent
+    const transient = ["ECONNRESET", "EPIPE", "ETIMEDOUT", "ECONNABORTED"];
+    const needHardRetry = transient.includes(res.code) || res.status >= 500 || res.status === 429;
+
+    const backoff = needHardRetry ? 700 + jitter(0, 400) : 300 + jitter(0, 200);
     await sleep(backoff);
-    console.log(`  ↻ Retry (${backoff}ms): ${url}`);
-    res = await hitOnce(url);
+    console.log(`  ↻ Retry (${backoff}ms, forceClose=${needHardRetry}) : ${url}`);
+
+    res = await hitOnce(url, { forceClose: needHardRetry });
   }
 
   if (res.ok) {
     console.log(`  🎯 SUCCESS: 200 + JSON => ${url}`);
   } else {
-    console.log(`  🛑 FAILED: ${url} (status=${res.status}, json=${res.isJson})`);
+    console.log(`  🛑 FAILED: ${url} (status=${res.status}, json=${res.isJson}, code=${res.code || "-"})`);
   }
+
+  // mikro-jeda acak agar tidak burst di proxy
+  await sleep(jitter());
 }
 
 async function processAll(urls) {
@@ -207,6 +253,13 @@ async function startLoop() {
   console.log(`🚀 Loop dimulai | SOURCE_URL: ${SOURCE_URL} | CORS_PROXY: ${CORS_PROXY} | encoded=${USE_ENCODED}`);
   console.log(`⏱️ Konfigurasi jeda: PER_URL_DELAY_MS=${PER_URL_DELAY_MS} | LOOP_SLEEP_MS=${LOOP_SLEEP_MS} (~${(LOOP_SLEEP_MS/60000).toFixed(3)} menit)`);
   while (true) {
+    if (RECREATE_EACH_LOOP) {
+      try { httpAgent?.destroy?.(); httpsAgent?.destroy?.(); } catch {}
+      axiosClient = makeAxios();
+      _reqCountSinceReset = 0;
+      console.log("♻️  Client direcreate di awal loop (RECREATE_EACH_LOOP=1)");
+    }
+
     const list = await fetchList();
     if (list.length) await processAll(list);
 
