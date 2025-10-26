@@ -1,4 +1,4 @@
-// server.js — ULTRA FAST CONTINUOUS
+// server.js — CONTINUOUS NO-DELAY
 import express from "express";
 import https from "https";
 import { URL } from "url";
@@ -9,86 +9,91 @@ const PORT = process.env.PORT || 10000;
 const app = express();
 app.listen(PORT, () => {
   console.log(`🌐 Service running on ${PORT}`);
-  startUltraFastFlow();
+  startContinuousFlow();
 });
 
+// Fetch URLs menggunakan axios
 import axios from "axios";
-
-class UltraFastProcessor {
-  constructor() {
-    this.urls = [];
-    this.currentIndex = 0;
-  }
-
-  async refreshURLs() {
-    try {
-      const r = await axios.get(SOURCE_URL);
-      this.urls = String(r.data).split('\n')
-        .map(s => s.trim())
-        .filter(s => s && s.startsWith('http'));
-      this.currentIndex = 0;
-      console.log(`✅ Loaded ${this.urls.length} URLs`);
-      return this.urls.length > 0;
-    } catch (e) {
-      console.log("❌ Failed to fetch URLs:", e.message);
-      return false;
-    }
-  }
-
-  getNextURL() {
-    if (this.currentIndex >= this.urls.length) return null;
-    return this.urls[this.currentIndex++];
-  }
-
-  hitURL(url) {
-    return new Promise((resolve) => {
-      const proxiedUrl = `https://cors-anywhere-vercel-dzone.vercel.app/https:/${url.replace(/^https?:\/\//, "")}`;
-      const parsedUrl = new URL(proxiedUrl);
-      
-      const req = https.request({
-        hostname: parsedUrl.hostname,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': '*/*'
-        },
-        timeout: 30000
-      }, (res) => {
-        console.log(`🎯 ${url.split('?')[0]} → ${res.statusCode}`);
-        resolve(res.statusCode === 200);
-      });
-
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(false);
-      });
-
-      req.end();
-    });
+async function fetchURLs() {
+  try {
+    const r = await axios.get(SOURCE_URL);
+    const urls = String(r.data).split('\n')
+      .map(s => s.trim())
+      .filter(s => s && s.startsWith('http'));
+    console.log(`✅ Loaded ${urls.length} URLs`);
+    return urls;
+  } catch (e) {
+    console.log("❌ Failed to fetch URL list:", e.message);
+    return [];
   }
 }
 
-const processor = new UltraFastProcessor();
+// HIT URL USING NATIVE NODE.JS HTTPS
+function hitWithNativeHTTP(url) {
+  return new Promise((resolve) => {
+    const proxiedUrl = `https://cors-anywhere-vercel-dzone.vercel.app/https:/${url.replace(/^https?:\/\//, "")}`;
+    const parsedUrl = new URL(proxiedUrl);
+    
+    console.log(`🎯 ${url.split('?')[0]}`);
+    
+    const options = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Cache-Control': 'no-cache'
+      },
+      timeout: 30000
+    };
 
-async function startUltraFastFlow() {
-  console.log("🚀 Starting ULTRA FAST continuous flow...");
-  
-  await processor.refreshURLs();
+    const req = https.request(options, (res) => {
+      console.log(`📊 Response: ${res.statusCode}`);
+      
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        const success = res.statusCode === 200;
+        console.log(success ? '✅ SUCCESS' : `❌ FAILED (${res.statusCode})`);
+        resolve(success);
+      });
+    });
+
+    req.on('error', (error) => {
+      console.log(`💥 Error: ${error.message}`);
+      resolve(false);
+    });
+
+    req.on('timeout', () => {
+      console.log('💥 Timeout');
+      req.destroy();
+      resolve(false);
+    });
+
+    req.end();
+  });
+}
+
+async function startContinuousFlow() {
+  console.log("🚀 Starting CONTINUOUS NO-DELAY flow...");
   
   while (true) {
-    const url = processor.getNextURL();
+    const urls = await fetchURLs();
     
-    if (!url) {
-      // Immediately refresh when list is exhausted
-      await processor.refreshURLs();
-      continue;
+    // Process all URLs sequentially without delay
+    for (const url of urls) {
+      await hitWithNativeHTTP(url);
+      // NO DELAY - immediately continue to next URL
     }
-
-    // Process URL without any delay
-    await processor.hitURL(url);
     
-    // Continue immediately to next URL
+    // Immediately fetch new list and continue
+    console.log("🔄 Fetching new URL list...");
   }
 }
