@@ -1,145 +1,174 @@
-// server.js — BROWSER-LIKE requests
+// server.js — sequential, no-delay, random Cookie per request, success only if 200+JSON
 import express from "express";
 import axios from "axios";
-import https from "https";
+import dns from "dns";
+import crypto from "crypto";
+import { URL } from "url";
+import path from "path";
+import { fileURLToPath } from "url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/* ===== ENV ===== */
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const CORS_PROXY = "https://cors-anywhere-vercel-dzone.vercel.app/";
+const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "");
+const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 30000);
 const PORT = process.env.PORT || 10000;
+const ENABLE_RANDOM_COOKIE = process.env.ENABLE_RANDOM_COOKIE !== "0"; // default ON
 
+/* ===== Net prefs ===== */
+dns.setDefaultResultOrder?.("ipv4first");
+
+/* ===== Web keep-awake (opsional) ===== */
 const app = express();
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html")); // opsional
+});
 app.listen(PORT, () => {
-  console.log(`🌐 Service running on ${PORT}`);
-  startFlow();
+  console.log(`🌐 Web service on ${PORT}`);
+  startLoop();
 });
 
-// AXIOS INSTANCE dengan setting seperti browser
-const axiosClient = axios.create({
-  timeout: 30000,
-  validateStatus: () => true,
-  httpsAgent: new https.Agent({
-    // Setting TLS seperti browser modern
-    secureProtocol: 'TLSv1_2_method',
-    rejectUnauthorized: false
-  }),
-  maxRedirects: 5,
-  decompress: true
-});
-
-class URLQueue {
-  constructor() {
-    this.urls = [];
-    this.currentIndex = 0;
-  }
-
-  async refreshList() {
-    try {
-      console.log("🔄 Fetching fresh URL list...");
-      const r = await axiosClient.get(SOURCE_URL, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
-      const newUrls = String(r.data).split('\n')
-        .map(s => s.trim())
-        .filter(s => s && s.startsWith('http'));
-      
-      this.urls = newUrls;
-      this.currentIndex = 0;
-      console.log(`✅ Loaded ${this.urls.length} URLs`);
-      return this.urls.length > 0;
-    } catch (e) {
-      console.log("❌ Failed to fetch URL list:", e.message);
-      return false;
-    }
-  }
-
-  getNextUrl() {
-    if (this.currentIndex >= this.urls.length) return null;
-    return this.urls[this.currentIndex++];
-  }
-
-  hasMoreUrls() {
-    return this.currentIndex < this.urls.length;
-  }
+/* ===== Helpers ===== */
+// ubah "https://" => "https:/" dan "http://" => "http:/"
+function toSingleSlashScheme(urlStr) {
+  return String(urlStr).replace(/^https?:\/\//i, (m) => m.replace(/\/+$/, "/"));
 }
 
-const urlQueue = new URLQueue();
-
-function makeProxiedUrl(targetUrl) {
-  const randomParam = `__r=${Math.random().toString(36).slice(2)}`;
-  const separator = targetUrl.includes('?') ? '&' : '?';
-  return `${CORS_PROXY.replace(/\/+$/, "")}/https:/${targetUrl.replace(/^https?:\/\//, "")}${separator}${randomParam}`;
+// hasil akhir: "<proxy>/<https:/domain/...>"
+function makeProxiedUrl(baseProxy, targetUrl) {
+  const cleanBase = String(baseProxy).replace(/\/+$/, "");
+  const normTarget = toSingleSlashScheme(targetUrl);
+  return `${cleanBase}/${normTarget}`;
 }
 
-// HEADERS PERSIS SEPERTI BROWSER
-function getBrowserLikeHeaders() {
-  return {
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Pragma': 'no-cache',
-    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"Windows"',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Upgrade-Insecure-Requests': '1',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+function randHex(nBytes) {
+  return crypto.randomBytes(nBytes).toString("hex");
+}
+function randBase36(len = 12) {
+  return [...Array(len)].map(() => Math.floor(Math.random() * 36).toString(36)).join("");
+}
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Cookie random “terlihat realistis” (kombinasi beberapa nama umum)
+function makeRandomCookie() {
+  // contoh pola: _ga, _gid, csrftoken/sessionid, __Host-sid
+  const ga = `_ga=GA1.2.${randInt(100000000, 999999999)}.${Date.now()}`;
+  const gid = `_gid=GA1.2.${randInt(100000000, 999999999)}.${Math.floor(Date.now() / 1000)}`;
+  const sid = `sessionid=${randHex(16)}`;
+  const csrft = `csrftoken=${randHex(16)}`;
+  const hostSid = `__Host-sid=${randHex(18)}`;
+  const misc = `_utmz=${randBase36(24)}; _fbp=fb.${Date.now()}.${randInt(1000000000, 1999999999)}`;
+  // acak subset supaya tidak statis
+  const parts = [ga, gid, sid, csrft, hostSid, misc];
+  const pick = parts.filter(() => Math.random() > 0.3);
+  return pick.join("; ");
+}
+
+// beberapa User-Agent populer
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+];
+function randomUA() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+// Header mirip browser, Origin/Referer ke PROXY base (bukan target)
+function proxyLikeHeaders(baseProxy) {
+  const origin = String(baseProxy).replace(/\/+$/, "");
+  const ua = randomUA();
+  const h = {
+    "Origin": origin,
+    "Referer": origin + "/",
+    "User-Agent": ua,
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate", // hindari br untuk mengurangi masalah decoding
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Connection": "close",
+    // header “fetch” modern
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+    "DNT": "1",
+    "Upgrade-Insecure-Requests": "1",
+    // opsi X-Requested-With bisa membantu pada beberapa proxy,
+    // tapi kadang memicu blok; kita tidak set di sini.
   };
+  if (ENABLE_RANDOM_COOKIE) {
+    h["Cookie"] = makeRandomCookie();
+  }
+  return h;
 }
 
-async function hitSingleUrl(url) {
-  const proxiedUrl = makeProxiedUrl(url);
-  
-  console.log(`🎯 [${new Date().toLocaleTimeString()}] Hitting: ${url.substring(0, 60)}...`);
-  
-  try {
-    const res = await axiosClient.get(proxiedUrl, {
-      headers: getBrowserLikeHeaders(),
-      // Tambahkan setting seperti browser
-      withCredentials: true, // SEND COOKIES
-      maxRedirects: 5,
-      timeout: 30000
-    });
+const http = axios.create({
+  timeout: REQUEST_TIMEOUT,
+  validateStatus: () => true, // kita yang menentukan sukses/gagal
+  decompress: true,
+  responseType: "text" // biar kita bisa parse sendiri
+});
 
-    console.log(`📊 Response: ${res.status} | Size: ${JSON.stringify(res.data)?.length || 0} bytes`);
-    
-    if (res.status === 200) {
-      console.log(`✅ SUCCESS!`);
-      return true;
-    } else {
-      console.log(`❌ Failed: Status ${res.status}`);
-      return false;
-    }
-    
-  } catch (error) {
-    console.log(`💥 Error: ${error.message}`);
-    if (error.response) {
-      console.log(`   Response: ${error.response.status} ${error.response.statusText}`);
-    }
-    return false;
+function isJsonResponse(res) {
+  try {
+    const ct = String(res.headers?.["content-type"] || "").toLowerCase();
+    if (ct.includes("application/json")) return true;
+    if (res.data && typeof res.data === "object") return true;
+    if (typeof res.data === "string") { JSON.parse(res.data); return true; }
+  } catch { /* bukan JSON valid */ }
+  return false;
+}
+
+async function fetchList() {
+  try {
+    const r = await http.get(SOURCE_URL, { headers: proxyLikeHeaders(CORS_PROXY) });
+    const body = typeof r.data === "string" ? r.data : JSON.stringify(r.data);
+    const urls = body.split(/\r?\n/).map(s => s.trim()).filter(s => s && s.startsWith("http"));
+    console.log(`✅ Ditemukan ${urls.length} URL`);
+    return urls;
+  } catch (e) {
+    console.log("❌ Gagal ambil daftar:", e?.message || e);
+    return [];
   }
 }
 
-async function startFlow() {
-  console.log("🚀 Starting BROWSER-LIKE flow...");
-  
+// Satu kali tembak, putuskan cepat: jika 200+JSON => SUCCESS; selain itu SKIP
+async function hitOnceAndDecide(url) {
+  const proxied = makeProxiedUrl(CORS_PROXY, url);
+  console.log(`[${new Date().toLocaleString()}] 🔁 GET ${proxied}`);
+
+  const headers = proxyLikeHeaders(CORS_PROXY); // random UA + random Cookie tiap request
+  const t0 = Date.now();
+  const res = await http.get(proxied, { headers });
+  const ms = Date.now() - t0;
+
+  if (res.status === 200 && isJsonResponse(res)) {
+    console.log(`  ✅ GET 200 JSON in ${ms}ms`);
+    console.log(`  🎯 SUCCESS => ${url}`);
+  } else {
+    const why = res.status !== 200
+      ? `status=${res.status}`
+      : `non-JSON (ct=${res.headers?.["content-type"] || "unknown"})`;
+    console.log(`  ⏭️  SKIP (${why}) in ${ms}ms => ${url}`);
+  }
+}
+
+async function processSequential(urls) {
+  for (const url of urls) {
+    await hitOnceAndDecide(url); // 1 request per URL, non-JSON langsung SKIP
+  }
+}
+
+async function startLoop() {
   while (true) {
-    await urlQueue.refreshList();
-    
-    while (urlQueue.hasMoreUrls()) {
-      const url = urlQueue.getNextUrl();
-      await hitSingleUrl(url);
-      
-      // Delay seperti manusia browsing
-      await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
-    }
-    
-    console.log("💤 Finished batch, waiting 10s...");
-    await new Promise(r => setTimeout(r, 10000));
+    const list = await fetchList();
+    if (list.length) await processSequential(list);
+    // tanpa delay: langsung ulangi; beri 1 tick agar event loop bernapas
+    await new Promise(r => setImmediate(r));
   }
 }
