@@ -1,8 +1,6 @@
-// server.js (simple & direct)
+// server.js — simple, no-delay, proxy-path "https:/"
 import express from "express";
 import axios from "axios";
-import http from "http";
-import https from "https";
 import dns from "dns";
 import { URL } from "url";
 import path from "path";
@@ -11,23 +9,20 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /* ============== ENV ============== */
-const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "");
+const SOURCE_URL   = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
+const CORS_PROXY   = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "");
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 30000);
-
-/* ============== Basic net prefs ============== */
-dns.setDefaultResultOrder?.("ipv4first");
-const httpAgent  = new http.Agent({ keepAlive: true });
-const httpsAgent = new https.Agent({ keepAlive: true });
-
-/* ============== App keep-awake ============== */
-const app = express();
 const PORT = process.env.PORT || 10000;
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html")); // siapkan file ini jika mau tampilan
-});
+/* ============== Net prefs ============== */
+dns.setDefaultResultOrder?.("ipv4first");
 
+/* ============== Web (keep-awake) ============== */
+const app = express();
+app.get("/", (req, res) => {
+  // opsional: sediakan public/index.html agar ada tampilan
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 app.listen(PORT, () => {
   console.log(`🌐 Web service on ${PORT}`);
   startLoop();
@@ -46,43 +41,42 @@ function makeProxiedUrl(baseProxy, targetUrl) {
   return `${cleanBase}/${normTarget}`;
 }
 
-function browserHeaders(targetUrl) {
-  const u = new URL(targetUrl);
+// header yang disukai CORS-Anywhere: Origin/Referer = base proxy
+function proxyHeaders(baseProxy) {
+  const origin = String(baseProxy).replace(/\/+$/, "");
   return {
-    "Origin": `${u.protocol}//${u.host}`,
-    "Referer": `${u.protocol}//${u.host}/`,
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+    "Origin": origin,
+    "Referer": origin + "/",
+    "X-Requested-With": "fetch",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
     "Accept": "application/json,text/plain,*/*",
-    "X-Requested-With": "XMLHttpRequest",
     "Cache-Control": "no-cache",
     "Pragma": "no-cache",
-    "Connection": "keep-alive"
+    "Connection": "close" // paksa koneksi baru supaya tidak ke-flag
   };
 }
 
 const axiosClient = axios.create({
   timeout: REQUEST_TIMEOUT,
-  httpAgent,
-  httpsAgent,
-  decompress: true,
   // biar kita yang menilai sukses/gagal
   validateStatus: () => true,
+  decompress: true
 });
 
-/* ============== Core logic ============== */
 function isJsonResponse(res) {
   try {
     const ct = String(res.headers?.["content-type"] || "").toLowerCase();
     if (ct.includes("application/json")) return true;
     if (res.data && typeof res.data === "object") return true;
     if (typeof res.data === "string") { JSON.parse(res.data); return true; }
-  } catch { /* ignore */ }
+  } catch {/* ignore */}
   return false;
 }
 
 async function fetchList() {
   try {
-    const r = await axiosClient.get(SOURCE_URL, { headers: browserHeaders(SOURCE_URL) });
+    const r = await axiosClient.get(SOURCE_URL, { headers: proxyHeaders(CORS_PROXY) });
     const body = typeof r.data === "string" ? r.data : JSON.stringify(r.data);
     const urls = body.split(/\r?\n/).map(s => s.trim()).filter(s => s && s.startsWith("http"));
     console.log(`✅ Ditemukan ${urls.length} URL`);
@@ -94,9 +88,11 @@ async function fetchList() {
 }
 
 async function hitUrlOnce(rawUrl) {
-  // header pakai bentuk normal (https://), tapi path ke proxy pakai https:/
+  // path ke proxy pakai "https:/"; header pakai base proxy
   const proxied = makeProxiedUrl(CORS_PROXY, rawUrl);
-  const headers = browserHeaders(rawUrl);
+  const headers = proxyHeaders(CORS_PROXY);
+
+  console.log(`[${new Date().toLocaleString()}] 🔁 GET ${proxied}`);
 
   const t0 = Date.now();
   const res = await axiosClient.get(proxied, { headers });
@@ -116,7 +112,6 @@ async function hitUrlOnce(rawUrl) {
 
 async function processAll(urls) {
   for (const url of urls) {
-    console.log(`[${new Date().toLocaleString()}] 🔁 GET ${makeProxiedUrl(CORS_PROXY, url)}`);
     const ok = await hitUrlOnce(url);
     if (ok) {
       console.log(`  🎯 SUCCESS => ${url}`);
@@ -130,7 +125,7 @@ async function startLoop() {
   while (true) {
     const list = await fetchList();
     if (list.length) await processAll(list);
-    // tanpa jeda: lanjut langsung, beri 1 tick agar event loop bernafas
+    // tanpa jeda: lanjut terus, beri 1 tick agar event loop bernapas
     await new Promise(r => setImmediate(r));
   }
 }
