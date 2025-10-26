@@ -4,28 +4,34 @@ import axios from "axios";
 import http from "http";
 import https from "https";
 
-/* ============ ENV ============ */
+/* =========================
+ * ENV & Konfigurasi
+ * ========================= */
 const SOURCE_URL =
   process.env.SOURCE_URL ||
   "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 
+const USE_PROXY = Number(process.env.USE_PROXY || 0); // 0=langsung, 1=pakai proxy
 const CORS_PROXY =
   process.env.CORS_PROXY ||
   "https://cors-anywhere-vercel-dzone.vercel.app/";
 
+// Timeout request per URL (ms)
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 
-// Tanpa delay antar putaran (ambil node.txt lagi langsung)
+// Tanpa delay antar putaran (ambil node.txt lagi langsung kalau 0)
 const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
 
-// Jeda antar-batch (ms) biar aman (0 = tanpa jeda)
+// Jeda antar-batch (ms) agar aman; 0 = tanpa jeda
 const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 250);
 
-// Paralel terbatas: banyaknya request sekaligus per batch
+// Paralel terbatas (batched): banyaknya request sekaligus per batch (>=1)
 const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY || 10));
 
-/* ============ Axios (keep-alive) ============ */
-const httpAgent  = new http.Agent({ keepAlive: true, maxSockets: 200 });
+/* =========================
+ * Axios client (keep-alive)
+ * ========================= */
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 200 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 200 });
 
 const client = axios.create({
@@ -33,15 +39,25 @@ const client = axios.create({
   maxRedirects: 3,
   httpAgent,
   httpsAgent,
-  validateStatus: () => true,
+  validateStatus: () => true, // biar kita yang nilai
 });
 
-/* ============ Utils ============ */
+/* =========================
+ * Helpers
+ * ========================= */
+
+// Mode proxy (CORS-anywhere) butuh skema satu slash:
+// "https://domain/path" -> "https:/domain/path" ; "http://..." -> "http:/..."
 function toSingleSlashScheme(url) {
-  // "https://example.com/a" -> "https:/example.com/a"
-  // "http://example.com/a"  -> "http:/example.com/a"
   return url.replace(/^https?:\/\//i, (m) => m.slice(0, -1));
 }
+
+// Mode direct: pastikan ada skema; default ke https:// bila tak ada
+function normalizeDirectUrl(u) {
+  if (!/^https?:\/\//i.test(u)) return "https://" + u.replace(/^\/+/, "");
+  return u;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function parseList(txt) {
@@ -72,24 +88,34 @@ function shortBody(body) {
   return s.length > 200 ? s.slice(0, 200) + " …" : s;
 }
 
-/* ============ Core ============ */
+/* =========================
+ * Core
+ * ========================= */
 async function fetchList() {
-  console.log(`📥 Ambil daftar URL: ${SOURCE_URL}`);
+  console.log(`📥 Ambil daftar URL dari: ${SOURCE_URL}`);
   const resp = await client.get(SOURCE_URL, { responseType: "text" });
-  if (resp.status !== 200) throw new Error(`Gagal ambil node.txt | HTTP ${resp.status}`);
+  if (resp.status !== 200) {
+    throw new Error(`Gagal ambil node.txt | HTTP ${resp.status}`);
+  }
   const list = parseList(resp.data);
-  console.log(`📄 Dapat ${list.length} URL`);
+  console.log(`📄 Dapat ${list.length} URL dari node.txt`);
   return list;
 }
 
-async function hitOne(targetUrl) {
-  const singleSlash = toSingleSlashScheme(targetUrl);
-  const proxied = `${CORS_PROXY}${singleSlash}`;
+function buildRequestUrl(targetUrl) {
+  if (USE_PROXY) {
+    const singleSlash = toSingleSlashScheme(targetUrl);
+    return `${CORS_PROXY}${singleSlash}`;
+  }
+  return normalizeDirectUrl(targetUrl);
+}
 
+async function hitOne(targetUrl) {
+  const reqUrl = buildRequestUrl(targetUrl);
   const t0 = Date.now();
   let resp;
   try {
-    resp = await client.get(proxied, {
+    resp = await client.get(reqUrl, {
       responseType: "text",
       headers: {
         "Accept": "*/*",
@@ -97,7 +123,7 @@ async function hitOne(targetUrl) {
       },
     });
   } catch (err) {
-    console.log(`❌ ${targetUrl} | ERROR: ${err.message}`);
+    console.log(`❌ ${targetUrl} | ERROR request: ${err.message} ${USE_PROXY ? "(proxy)" : "(direct)"}`);
     return { ok: false, status: 0 };
   }
 
@@ -105,15 +131,17 @@ async function hitOne(targetUrl) {
   const bodyText = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
 
   if (isJsonResponse(resp, bodyText)) {
-    console.log(`✅ JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms`);
+    console.log(`✅ JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${USE_PROXY ? "(proxy)" : "(direct)"}`);
     return { ok: true, status: resp.status };
   } else {
-    console.log(`⚠️ BUKAN JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms | body: ${shortBody(bodyText)}`);
+    console.log(
+      `⚠️ BUKAN JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms | body: ${shortBody(bodyText)} ${USE_PROXY ? "(proxy)" : "(direct)"}`
+    );
     return { ok: false, status: resp.status };
   }
 }
 
-// Paralel terbatas (batched): jalankan per-chunk sebesar CONCURRENCY
+// Paralel terbatas (batched)
 async function runBatched(urls) {
   for (let i = 0; i < urls.length; i += CONCURRENCY) {
     const chunk = urls.slice(i, i + CONCURRENCY);
@@ -123,12 +151,17 @@ async function runBatched(urls) {
 }
 
 async function mainLoop() {
-  console.log(`🚀 Mulai | concurrency=${CONCURRENCY} | batchDelay=${PER_URL_DELAY_MS}ms | encoded=single-slash`);
+  console.log(
+    `🚀 Mulai | mode=${USE_PROXY ? "proxy" : "direct"} | concurrency=${CONCURRENCY} | batchDelay=${PER_URL_DELAY_MS}ms | encoded=${USE_PROXY ? "single-slash" : "normal"}`
+  );
   while (true) {
     try {
       const list = await fetchList();
-      if (list.length) await runBatched(list);
-      else console.log("ℹ️ node.txt kosong");
+      if (list.length) {
+        await runBatched(list);
+      } else {
+        console.log("ℹ️ node.txt kosong.");
+      }
     } catch (e) {
       console.log(`❌ Loop error: ${e.message}`);
     }
@@ -142,12 +175,15 @@ async function mainLoop() {
   }
 }
 
-/* ============ HTTP Health ============ */
+/* =========================
+ * HTTP Health Check
+ * ========================= */
 const app = express();
 app.get("/", (req, res) => {
   res.type("text/plain").send(
     [
       "✅ Railway URL Runner (batched parallel) aktif.",
+      `MODE=${USE_PROXY ? "proxy" : "direct"}`,
       `SOURCE_URL=${SOURCE_URL}`,
       `CORS_PROXY=${CORS_PROXY}`,
       `REQUEST_TIMEOUT=${REQUEST_TIMEOUT}`,
@@ -155,8 +191,10 @@ app.get("/", (req, res) => {
       `PER_URL_DELAY_MS=${PER_URL_DELAY_MS}`,
       `LOOP_DELAY_MINUTES=${LOOP_DELAY_MINUTES}`,
       "",
-      "Sukses jika respons target berupa JSON.",
-      "Format request: <CORS_PROXY> + <https:/single-slash-url>",
+      "Sukses jika respons target berupa JSON (header application/json atau isi bisa di-parse JSON).",
+      USE_PROXY
+        ? "Format request (proxy): <CORS_PROXY> + <https:/single-slash-url>"
+        : "Format request (direct): https://target/normal",
     ].join("\n")
   );
 });
@@ -164,7 +202,8 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Web service di port ${PORT}`));
 
+// Mulai loop
 mainLoop().catch((e) => {
-  console.error("Fatal:", e);
+  console.error("Fatal error:", e);
   process.exit(1);
 });
