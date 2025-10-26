@@ -8,14 +8,9 @@ services:
     envVars:
       - key: SOURCE_URL
         value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"
-      # Tanpa jeda setelah selesai: set semua jeda ke 0
-      - key: LOOP_DELAY_MS
-        value: "0"           # loop langsung lanjut (prioritas tertinggi)
-      - key: PER_URL_DELAY_MS
-        value: "0"           # tanpa jeda antar-URL
       - key: REQUEST_TIMEOUT
         value: "60000"
       - key: CORS_PROXY
         value: "https://cors-anywhere-vercel-dzone.vercel.app/"
-      - key: USE_ENCODED
+      - key: PER_URL_DELAY_MS
         value: "0"
