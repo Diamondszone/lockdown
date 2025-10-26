@@ -9,8 +9,6 @@ services:
       - key: SOURCE_URL
         value: "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt"
       - key: REQUEST_TIMEOUT
-        value: "60000"
+        value: "60000"   # boleh 30000 kalau mau lebih agresif
       - key: CORS_PROXY
         value: "https://cors-anywhere-vercel-dzone.vercel.app/"
-      - key: PER_URL_DELAY_MS
-        value: "0"
