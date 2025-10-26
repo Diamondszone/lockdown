@@ -1,14 +1,15 @@
 {
   "name": "url-rotator-web",
   "version": "1.0.0",
-  "description": "Render Web Service for looping GET via CORS Anywhere",
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "npx playwright install chromium"
   },
   "dependencies": {
-    "axios": "^1.7.4",
-    "express": "^4.19.2"
+    "axios": "^1.7.7",
+    "express": "^4.19.2",
+    "playwright": "^1.48.2"
   }
 }
