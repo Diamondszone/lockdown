@@ -1,43 +1,51 @@
-// server.js — ONE-BY-NEXT strategy (no waiting)
+// server.js — BROWSER-LIKE requests
 import express from "express";
 import axios from "axios";
-import dns from "dns";
+import https from "https";
 
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 const CORS_PROXY = "https://cors-anywhere-vercel-dzone.vercel.app/";
 const PORT = process.env.PORT || 10000;
 
-dns.setDefaultResultOrder?.("ipv4first");
 const app = express();
 app.listen(PORT, () => {
   console.log(`🌐 Service running on ${PORT}`);
-  startContinuousFlow();
+  startFlow();
 });
 
+// AXIOS INSTANCE dengan setting seperti browser
 const axiosClient = axios.create({
   timeout: 30000,
-  validateStatus: () => true
+  validateStatus: () => true,
+  httpsAgent: new https.Agent({
+    // Setting TLS seperti browser modern
+    secureProtocol: 'TLSv1_2_method',
+    rejectUnauthorized: false
+  }),
+  maxRedirects: 5,
+  decompress: true
 });
 
-// SIMPLE URL QUEUE SYSTEM
 class URLQueue {
   constructor() {
     this.urls = [];
     this.currentIndex = 0;
-    this.lastFetchTime = 0;
   }
 
   async refreshList() {
     try {
       console.log("🔄 Fetching fresh URL list...");
-      const r = await axiosClient.get(SOURCE_URL);
+      const r = await axiosClient.get(SOURCE_URL, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
       const newUrls = String(r.data).split('\n')
         .map(s => s.trim())
         .filter(s => s && s.startsWith('http'));
       
       this.urls = newUrls;
       this.currentIndex = 0;
-      this.lastFetchTime = Date.now();
       console.log(`✅ Loaded ${this.urls.length} URLs`);
       return this.urls.length > 0;
     } catch (e) {
@@ -47,17 +55,12 @@ class URLQueue {
   }
 
   getNextUrl() {
-    if (this.currentIndex >= this.urls.length) {
-      return null; // No more URLs in current list
-    }
-    const url = this.urls[this.currentIndex];
-    this.currentIndex++;
-    return url;
+    if (this.currentIndex >= this.urls.length) return null;
+    return this.urls[this.currentIndex++];
   }
 
-  shouldRefresh() {
-    // Refresh every 5 minutes or if list exhausted
-    return Date.now() - this.lastFetchTime > 300000 || this.currentIndex >= this.urls.length;
+  hasMoreUrls() {
+    return this.currentIndex < this.urls.length;
   }
 }
 
@@ -69,70 +72,74 @@ function makeProxiedUrl(targetUrl) {
   return `${CORS_PROXY.replace(/\/+$/, "")}/https:/${targetUrl.replace(/^https?:\/\//, "")}${separator}${randomParam}`;
 }
 
+// HEADERS PERSIS SEPERTI BROWSER
+function getBrowserLikeHeaders() {
+  return {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  };
+}
+
 async function hitSingleUrl(url) {
   const proxiedUrl = makeProxiedUrl(url);
   
-  console.log(`🎯 [${new Date().toLocaleTimeString()}] Targeting: ${url.substring(0, 80)}...`);
+  console.log(`🎯 [${new Date().toLocaleTimeString()}] Hitting: ${url.substring(0, 60)}...`);
   
   try {
     const res = await axiosClient.get(proxiedUrl, {
-      headers: {
-        "Origin": "https://example.com",
-        "Referer": "https://example.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json,text/plain,*/*",
-        "Cache-Control": "no-cache"
-      }
+      headers: getBrowserLikeHeaders(),
+      // Tambahkan setting seperti browser
+      withCredentials: true, // SEND COOKIES
+      maxRedirects: 5,
+      timeout: 30000
     });
 
-    const success = res.status === 200;
+    console.log(`📊 Response: ${res.status} | Size: ${JSON.stringify(res.data)?.length || 0} bytes`);
     
-    if (success) {
-      console.log(`✅ SUCCESS! (${res.status} in ${res.duration}ms) → Immediately moving to next URL`);
+    if (res.status === 200) {
+      console.log(`✅ SUCCESS!`);
       return true;
     } else {
-      console.log(`⚠️  Failed (status ${res.status}) → Moving to next URL`);
+      console.log(`❌ Failed: Status ${res.status}`);
       return false;
     }
     
   } catch (error) {
-    console.log(`💥 Error: ${error.message} → Moving to next URL`);
+    console.log(`💥 Error: ${error.message}`);
+    if (error.response) {
+      console.log(`   Response: ${error.response.status} ${error.response.statusText}`);
+    }
     return false;
   }
 }
 
-async function startContinuousFlow() {
-  console.log("🚀 Starting CONTINUOUS ONE-BY-ONE flow...");
-  
-  // Initial load
-  await urlQueue.refreshList();
+async function startFlow() {
+  console.log("🚀 Starting BROWSER-LIKE flow...");
   
   while (true) {
-    // Refresh list if needed
-    if (urlQueue.shouldRefresh()) {
-      const hasUrls = await urlQueue.refreshList();
-      if (!hasUrls) {
-        console.log("💤 No URLs available, waiting 30 seconds...");
-        await new Promise(r => setTimeout(r, 30000));
-        continue;
-      }
-    }
-
-    // Get next URL
-    const nextUrl = urlQueue.getNextUrl();
-    if (!nextUrl) {
-      console.log("📭 Queue empty, refreshing...");
-      await urlQueue.refreshList();
-      continue;
-    }
-
-    // Hit the URL (ONE AT A TIME)
-    const success = await hitSingleUrl(nextUrl);
+    await urlQueue.refreshList();
     
-    // ✅ LANGSUNG LANJUT KE URL BERIKUTNYA TANPA TUNGGU
-    // Tidak ada delay di sini - immediately continue to next URL
+    while (urlQueue.hasMoreUrls()) {
+      const url = urlQueue.getNextUrl();
+      await hitSingleUrl(url);
+      
+      // Delay seperti manusia browsing
+      await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
+    }
     
-    // Small breath to prevent event loop blocking
-    await new Promise(r => setImmediate(r));
+    console.log("💤 Finished batch, waiting 10s...");
+    await new Promise(r => setTimeout(r, 10000));
   }
 }
