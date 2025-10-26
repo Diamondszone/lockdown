@@ -4,9 +4,7 @@ import axios from "axios";
 import http from "http";
 import https from "https";
 
-/* =========================
- * ENV & Konfigurasi
- * ========================= */
+/* ============ ENV ============ */
 const SOURCE_URL =
   process.env.SOURCE_URL ||
   "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
@@ -15,24 +13,19 @@ const CORS_PROXY =
   process.env.CORS_PROXY ||
   "https://cors-anywhere-vercel-dzone.vercel.app/";
 
-// Timeout request per URL (ms)
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 
-// Tanpa delay setelah semua URL? set 0 (default 0)
+// Tanpa delay antar putaran (ambil node.txt lagi langsung)
 const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
 
-// Jeda antar batch (ms). Untuk full-parallel biasanya 0
-const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 0);
+// Jeda antar-batch (ms) biar aman (0 = tanpa jeda)
+const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 250);
 
-// Paralel:
-//   - CONCURRENCY <= 0  --> full parallel (semua URL sekaligus)
-//   - CONCURRENCY = n   --> n permintaan sekaligus (batched)
-const CONCURRENCY = Number(process.env.CONCURRENCY || 0);
+// Paralel terbatas: banyaknya request sekaligus per batch
+const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY || 10));
 
-/* =========================
- * Axios client (keep-alive)
- * ========================= */
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 200 });
+/* ============ Axios (keep-alive) ============ */
+const httpAgent  = new http.Agent({ keepAlive: true, maxSockets: 200 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 200 });
 
 const client = axios.create({
@@ -40,22 +33,16 @@ const client = axios.create({
   maxRedirects: 3,
   httpAgent,
   httpsAgent,
-  validateStatus: () => true, // biar kita yang nilai success/fail sendiri
+  validateStatus: () => true,
 });
 
-/* =========================
- * Helpers
- * ========================= */
-
-// Ubah "https://domain/path" -> "https:/domain/path" (satu slash)
-// Ubah "http://domain/path"  -> "http:/domain/path"
+/* ============ Utils ============ */
 function toSingleSlashScheme(url) {
+  // "https://example.com/a" -> "https:/example.com/a"
+  // "http://example.com/a"  -> "http:/example.com/a"
   return url.replace(/^https?:\/\//i, (m) => m.slice(0, -1));
 }
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function parseList(txt) {
   return (txt || "")
@@ -67,7 +54,6 @@ function parseList(txt) {
 function isJsonResponse(resp, bodyStr) {
   const ct = (resp.headers?.["content-type"] || "").toLowerCase();
   if (ct.includes("application/json")) return true;
-
   try {
     if (typeof resp.data === "object" && resp.data !== null) return true;
     if (typeof bodyStr === "string") {
@@ -77,7 +63,7 @@ function isJsonResponse(resp, bodyStr) {
         return true;
       }
     }
-  } catch (_) {}
+  } catch {}
   return false;
 }
 
@@ -86,17 +72,13 @@ function shortBody(body) {
   return s.length > 200 ? s.slice(0, 200) + " …" : s;
 }
 
-/* =========================
- * Core
- * ========================= */
+/* ============ Core ============ */
 async function fetchList() {
-  console.log(`📥 Mengambil daftar URL dari: ${SOURCE_URL}`);
+  console.log(`📥 Ambil daftar URL: ${SOURCE_URL}`);
   const resp = await client.get(SOURCE_URL, { responseType: "text" });
-  if (resp.status !== 200) {
-    throw new Error(`Gagal ambil node.txt | HTTP ${resp.status}`);
-  }
+  if (resp.status !== 200) throw new Error(`Gagal ambil node.txt | HTTP ${resp.status}`);
   const list = parseList(resp.data);
-  console.log(`📄 Dapat ${list.length} URL dari node.txt`);
+  console.log(`📄 Dapat ${list.length} URL`);
   return list;
 }
 
@@ -115,37 +97,24 @@ async function hitOne(targetUrl) {
       },
     });
   } catch (err) {
-    console.log(`❌ ${targetUrl} | ERROR request: ${err.message}`);
+    console.log(`❌ ${targetUrl} | ERROR: ${err.message}`);
     return { ok: false, status: 0 };
   }
 
   const ms = Date.now() - t0;
-  const bodyText =
-    typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
+  const bodyText = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
 
   if (isJsonResponse(resp, bodyText)) {
     console.log(`✅ JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms`);
     return { ok: true, status: resp.status };
   } else {
-    console.log(
-      `⚠️ BUKAN JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms | body: ${shortBody(bodyText)}`
-    );
+    console.log(`⚠️ BUKAN JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms | body: ${shortBody(bodyText)}`);
     return { ok: false, status: resp.status };
   }
 }
 
-// Full parallel (CONCURRENCY <= 0) atau batched (CONCURRENCY > 0)
-async function runParallel(urls) {
-  if (urls.length === 0) return;
-
-  if (CONCURRENCY <= 0) {
-    // Semua sekaligus
-    await Promise.all(urls.map((u) => hitOne(u)));
-    if (PER_URL_DELAY_MS > 0) await sleep(PER_URL_DELAY_MS);
-    return;
-  }
-
-  // Batched
+// Paralel terbatas (batched): jalankan per-chunk sebesar CONCURRENCY
+async function runBatched(urls) {
   for (let i = 0; i < urls.length; i += CONCURRENCY) {
     const chunk = urls.slice(i, i + CONCURRENCY);
     await Promise.all(chunk.map((u) => hitOne(u)));
@@ -154,56 +123,48 @@ async function runParallel(urls) {
 }
 
 async function mainLoop() {
-  console.log(
-    `🚀 Loop mulai | SOURCE_URL=${SOURCE_URL} | CORS_PROXY=${CORS_PROXY} | CONCURRENCY=${CONCURRENCY} | encoded=single-slash`
-  );
+  console.log(`🚀 Mulai | concurrency=${CONCURRENCY} | batchDelay=${PER_URL_DELAY_MS}ms | encoded=single-slash`);
   while (true) {
     try {
       const list = await fetchList();
-      await runParallel(list);
+      if (list.length) await runBatched(list);
+      else console.log("ℹ️ node.txt kosong");
     } catch (e) {
-      console.log(`❌ Gagal proses loop: ${e.message}`);
+      console.log(`❌ Loop error: ${e.message}`);
     }
 
     const waitMs = Math.max(0, LOOP_DELAY_MINUTES * 60 * 1000);
     if (waitMs > 0) {
-      console.log(`🕒 Menunggu ${LOOP_DELAY_MINUTES} menit sebelum refresh berikutnya...\n`);
+      console.log(`🕒 Tunggu ${LOOP_DELAY_MINUTES} menit sebelum refresh berikutnya...\n`);
       await sleep(waitMs);
-    } else {
-      // Tanpa delay; opsional micro-sleep agar event loop tetep lega
-      // await sleep(25);
     }
+    // jika 0 → langsung repeat (tanpa delay)
   }
 }
 
-/* =========================
- * HTTP Health Check
- * ========================= */
+/* ============ HTTP Health ============ */
 const app = express();
 app.get("/", (req, res) => {
   res.type("text/plain").send(
     [
-      "✅ Railway URL Runner via CORS-anywhere aktif.",
+      "✅ Railway URL Runner (batched parallel) aktif.",
       `SOURCE_URL=${SOURCE_URL}`,
       `CORS_PROXY=${CORS_PROXY}`,
       `REQUEST_TIMEOUT=${REQUEST_TIMEOUT}`,
-      `LOOP_DELAY_MINUTES=${LOOP_DELAY_MINUTES}`,
+      `CONCURRENCY=${CONCURRENCY} (batched)`,
       `PER_URL_DELAY_MS=${PER_URL_DELAY_MS}`,
-      `CONCURRENCY=${CONCURRENCY} (${CONCURRENCY <= 0 ? "full-parallel" : "batched"})`,
+      `LOOP_DELAY_MINUTES=${LOOP_DELAY_MINUTES}`,
       "",
-      "Sukses didefinisikan jika respons target berupa JSON (header application/json atau isi bisa di-parse JSON).",
+      "Sukses jika respons target berupa JSON.",
       "Format request: <CORS_PROXY> + <https:/single-slash-url>",
     ].join("\n")
   );
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🌐 Web service aktif di port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🌐 Web service di port ${PORT}`));
 
-// Mulai loop
 mainLoop().catch((e) => {
-  console.error("Fatal error:", e);
+  console.error("Fatal:", e);
   process.exit(1);
 });
