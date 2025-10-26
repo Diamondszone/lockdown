@@ -1,122 +1,138 @@
-// server.js — sequential, no-delay, skip non-JSON
+// server.js — ONE-BY-NEXT strategy (no waiting)
 import express from "express";
 import axios from "axios";
 import dns from "dns";
-import { URL } from "url";
-import path from "path";
-import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-/* ===== ENV ===== */
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const CORS_PROXY = (process.env.CORS_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app/").replace(/\/+$/, "");
-const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 30000);
+const CORS_PROXY = "https://cors-anywhere-vercel-dzone.vercel.app/";
 const PORT = process.env.PORT || 10000;
 
-/* ===== Net prefs ===== */
 dns.setDefaultResultOrder?.("ipv4first");
-
-/* ===== Web keep-awake ===== */
 const app = express();
-app.get("/", (req, res) => {
-  // opsional: sediakan public/index.html agar ada tampilan
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
 app.listen(PORT, () => {
-  console.log(`🌐 Web service on ${PORT}`);
-  startLoop();
+  console.log(`🌐 Service running on ${PORT}`);
+  startContinuousFlow();
 });
 
-/* ===== Helpers ===== */
-// ubah "https://" => "https:/" dan "http://" => "http:/"
-function toSingleSlashScheme(urlStr) {
-  return String(urlStr).replace(/^https?:\/\//i, (m) => m.replace(/\/+$/, "/"));
-}
-
-// hasil akhir: "<proxy>/<https:/domain/...>"
-function makeProxiedUrl(baseProxy, targetUrl) {
-  const cleanBase = String(baseProxy).replace(/\/+$/, "");
-  const normTarget = toSingleSlashScheme(targetUrl);
-  return `${cleanBase}/${normTarget}`;
-}
-
-// header yang cocok untuk banyak deploy CORS-Anywhere
-function proxyHeaders(baseProxy) {
-  const origin = String(baseProxy).replace(/\/+$/, "");
-  return {
-    Origin: origin,
-    Referer: origin + "/",
-    "X-Requested-With": "fetch",
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-    Accept: "application/json,text/plain,*/*",
-    "Cache-Control": "no-cache",
-    Pragma: "no-cache",
-    Connection: "close"
-  };
-}
-
-const http = axios.create({
-  timeout: REQUEST_TIMEOUT,
-  validateStatus: () => true, // biar kita yang nilai
-  decompress: true
+const axiosClient = axios.create({
+  timeout: 30000,
+  validateStatus: () => true
 });
 
-function isJsonResponse(res) {
+// SIMPLE URL QUEUE SYSTEM
+class URLQueue {
+  constructor() {
+    this.urls = [];
+    this.currentIndex = 0;
+    this.lastFetchTime = 0;
+  }
+
+  async refreshList() {
+    try {
+      console.log("🔄 Fetching fresh URL list...");
+      const r = await axiosClient.get(SOURCE_URL);
+      const newUrls = String(r.data).split('\n')
+        .map(s => s.trim())
+        .filter(s => s && s.startsWith('http'));
+      
+      this.urls = newUrls;
+      this.currentIndex = 0;
+      this.lastFetchTime = Date.now();
+      console.log(`✅ Loaded ${this.urls.length} URLs`);
+      return this.urls.length > 0;
+    } catch (e) {
+      console.log("❌ Failed to fetch URL list:", e.message);
+      return false;
+    }
+  }
+
+  getNextUrl() {
+    if (this.currentIndex >= this.urls.length) {
+      return null; // No more URLs in current list
+    }
+    const url = this.urls[this.currentIndex];
+    this.currentIndex++;
+    return url;
+  }
+
+  shouldRefresh() {
+    // Refresh every 5 minutes or if list exhausted
+    return Date.now() - this.lastFetchTime > 300000 || this.currentIndex >= this.urls.length;
+  }
+}
+
+const urlQueue = new URLQueue();
+
+function makeProxiedUrl(targetUrl) {
+  const randomParam = `__r=${Math.random().toString(36).slice(2)}`;
+  const separator = targetUrl.includes('?') ? '&' : '?';
+  return `${CORS_PROXY.replace(/\/+$/, "")}/https:/${targetUrl.replace(/^https?:\/\//, "")}${separator}${randomParam}`;
+}
+
+async function hitSingleUrl(url) {
+  const proxiedUrl = makeProxiedUrl(url);
+  
+  console.log(`🎯 [${new Date().toLocaleTimeString()}] Targeting: ${url.substring(0, 80)}...`);
+  
   try {
-    const ct = String(res.headers?.["content-type"] || "").toLowerCase();
-    if (ct.includes("application/json")) return true;
-    if (res.data && typeof res.data === "object") return true;
-    if (typeof res.data === "string") { JSON.parse(res.data); return true; }
-  } catch { /* bukan JSON valid */ }
-  return false;
-}
+    const res = await axiosClient.get(proxiedUrl, {
+      headers: {
+        "Origin": "https://example.com",
+        "Referer": "https://example.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Cache-Control": "no-cache"
+      }
+    });
 
-async function fetchList() {
-  try {
-    const r = await http.get(SOURCE_URL, { headers: proxyHeaders(CORS_PROXY) });
-    const body = typeof r.data === "string" ? r.data : JSON.stringify(r.data);
-    const urls = body.split(/\r?\n/).map(s => s.trim()).filter(s => s && s.startsWith("http"));
-    console.log(`✅ Ditemukan ${urls.length} URL`);
-    return urls;
-  } catch (e) {
-    console.log("❌ Gagal ambil daftar:", e?.message || e);
-    return [];
+    const success = res.status === 200;
+    
+    if (success) {
+      console.log(`✅ SUCCESS! (${res.status} in ${res.duration}ms) → Immediately moving to next URL`);
+      return true;
+    } else {
+      console.log(`⚠️  Failed (status ${res.status}) → Moving to next URL`);
+      return false;
+    }
+    
+  } catch (error) {
+    console.log(`💥 Error: ${error.message} → Moving to next URL`);
+    return false;
   }
 }
 
-async function hitOnceAndDecide(url) {
-  const proxied = makeProxiedUrl(CORS_PROXY, url);
-  console.log(`[${new Date().toLocaleString()}] 🔁 GET ${proxied}`);
-
-  const t0 = Date.now();
-  const res = await http.get(proxied, { headers: proxyHeaders(CORS_PROXY) });
-  const ms = Date.now() - t0;
-
-  // cepat & gesit: langsung putuskan
-  if (res.status === 200 && isJsonResponse(res)) {
-    console.log(`  ✅ GET 200 JSON in ${ms}ms`);
-    console.log(`  🎯 SUCCESS => ${url}`);
-  } else {
-    const why = res.status !== 200
-      ? `status=${res.status}`
-      : `non-JSON (ct=${res.headers?.["content-type"] || "unknown"})`;
-    console.log(`  ⏭️  SKIP (${why}) in ${ms}ms => ${url}`);
-  }
-}
-
-async function processSequential(urls) {
-  for (const url of urls) {
-    await hitOnceAndDecide(url); // satu tembakan per URL; non-JSON langsung skip
-  }
-}
-
-async function startLoop() {
+async function startContinuousFlow() {
+  console.log("🚀 Starting CONTINUOUS ONE-BY-ONE flow...");
+  
+  // Initial load
+  await urlQueue.refreshList();
+  
   while (true) {
-    const list = await fetchList();
-    if (list.length) await processSequential(list);
-    // tanpa delay: langsung ulangi; beri 1 tick agar event loop bernapas
+    // Refresh list if needed
+    if (urlQueue.shouldRefresh()) {
+      const hasUrls = await urlQueue.refreshList();
+      if (!hasUrls) {
+        console.log("💤 No URLs available, waiting 30 seconds...");
+        await new Promise(r => setTimeout(r, 30000));
+        continue;
+      }
+    }
+
+    // Get next URL
+    const nextUrl = urlQueue.getNextUrl();
+    if (!nextUrl) {
+      console.log("📭 Queue empty, refreshing...");
+      await urlQueue.refreshList();
+      continue;
+    }
+
+    // Hit the URL (ONE AT A TIME)
+    const success = await hitSingleUrl(nextUrl);
+    
+    // ✅ LANGSUNG LANJUT KE URL BERIKUTNYA TANPA TUNGGU
+    // Tidak ada delay di sini - immediately continue to next URL
+    
+    // Small breath to prevent event loop blocking
     await new Promise(r => setImmediate(r));
   }
 }
