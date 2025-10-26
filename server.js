@@ -53,7 +53,7 @@ function browserHeaders(targetUrl) {
     "Origin": "https://yourdomain.com",
     "X-Requested-With": "XMLHttpRequest",
     "User-Agent": randomUA(),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept": "application/json,text/plain,*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     "Cache-Control": "no-cache",
@@ -76,7 +76,8 @@ const axiosClient = axios.create({
   httpAgent,
   httpsAgent,
   decompress: true,
-  validateStatus: s => s >= 200 && s < 400, // 2xx & 3xx = sukses
+  // Jangan biarkan axios melempar berdasarkan status; kita nilai sendiri (200+JSON = sukses)
+  validateStatus: () => true,
   maxContentLength: 5 * 1024 * 1024,
   maxBodyLength: 5 * 1024 * 1024
 });
@@ -105,7 +106,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function fetchList() {
   try {
     const res = await axiosClient.get(SOURCE_URL, { headers: browserHeaders(SOURCE_URL) });
-    const urls = String(res.data)
+    const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+    const urls = String(body)
       .split(/\r?\n/)
       .map(s => s.trim())
       .filter(s => s && s.startsWith("http"));
@@ -118,19 +120,53 @@ async function fetchList() {
   }
 }
 
+function isJsonResponse(res) {
+  try {
+    // 1) Cek header Content-Type
+    const ct = String(res.headers?.["content-type"] || "").toLowerCase();
+    if (ct.includes("application/json")) return true;
+
+    // 2) Cek bentuk data
+    if (res.data !== null && typeof res.data === "object" && !Buffer.isBuffer(res.data)) {
+      return true;
+    }
+
+    // 3) Coba parse jika string
+    if (typeof res.data === "string") {
+      JSON.parse(res.data);
+      return true;
+    }
+  } catch (_) {
+    // parse gagal -> bukan JSON valid
+  }
+  return false;
+}
+
 async function timed(method, url, headers) {
   const t0 = Date.now();
   try {
     const res = await axiosClient.request({ method, url, headers });
     const ms = Date.now() - t0;
-    console.log(`  ✅ ${method} ${res.status} in ${ms}ms`);
-    return { ok: true, status: res.status };
+    const status = res.status ?? 0;
+    const json = isJsonResponse(res);
+    const ok = status === 200 && json;
+
+    if (ok) {
+      console.log(`  ✅ ${method} ${status} JSON in ${ms}ms`);
+    } else {
+      const why = status !== 200
+        ? `status=${status}`
+        : `non-JSON (content-type="${res.headers?.["content-type"] || "unknown"}")`;
+      console.log(`  ⚠️  ${method} not success (${why}) in ${ms}ms`);
+    }
+
+    return { ok, status, isJson: json };
   } catch (e) {
     const ms = Date.now() - t0;
+    const status = e?.response?.status ?? 0;
     console.log(`  ❌ ${method} error after ${ms}ms: ${e?.message || e}`);
     if (e?.stack) console.log(e.stack.split("\n").slice(0, 2).join("\n"));
-    const status = e?.response?.status ?? 0;
-    return { ok: false, status };
+    return { ok: false, status, isJson: false };
   }
 }
 
@@ -144,12 +180,19 @@ async function hitOnce(rawUrl) {
 
 async function hitWithRetry(url) {
   console.log(`[${new Date().toLocaleString()}] 🔁 GET (via CORS) ${url}`);
-  let { ok, status } = await hitOnce(url);
-  if (!ok) {
-    const backoff = (status === 429 || status >= 500) ? 1500 : 500;
+  let res = await hitOnce(url);
+
+  if (!res.ok) {
+    const backoff = (res.status === 429 || res.status >= 500) ? 1500 : 700;
     await sleep(backoff);
     console.log(`  ↻ Retry (${backoff}ms): ${url}`);
-    ({ ok } = await hitOnce(url));
+    res = await hitOnce(url);
+  }
+
+  if (res.ok) {
+    console.log(`  🎯 SUCCESS: 200 + JSON => ${url}`);
+  } else {
+    console.log(`  🛑 FAILED: ${url} (status=${res.status}, json=${res.isJson})`);
   }
 }
 
