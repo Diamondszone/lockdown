@@ -1,7 +1,7 @@
 {
   "name": "railway-url-runner-auto-switch",
   "version": "1.0.0",
-  "description": "URL runner auto switch direct/proxy dengan fetch bawaan Node.js",
+  "description": "URL runner nonstop dengan direct/proxy fallback, pakai fetch bawaan Node.js",
   "type": "module",
   "scripts": {
     "start": "node server.js"
