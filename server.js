@@ -35,7 +35,7 @@ async function hitUrl(url) {
   const directJson = direct.ok && !isCaptcha(direct.text) && isJson(direct.text);
 
   if (directJson) {
-    console.log(`🔗 URL: ${url}\n✅ Direct OK | JSON`);
+    console.log(`🔗 URL: ${url} | ✅ Direct OK | JSON`);
     return;
   }
 
@@ -43,9 +43,9 @@ async function hitUrl(url) {
   const proxyJson = proxied.ok && !isCaptcha(proxied.text) && isJson(proxied.text);
 
   if (proxyJson) {
-    console.log(`🔗 URL: ${url}\n✅ Proxy OK | JSON`);
+    console.log(`🔗 URL: ${url} | ✅ Proxy OK | JSON`);
   } else {
-    console.log(`🔗 URL: ${url}\n❌ Direct & Proxy | BUKAN JSON`);
+    console.log(`🔗 URL: ${url} | ❌ Direct & Proxy | BUKAN JSON`);
   }
 }
 
