@@ -1,7 +1,31 @@
-import fetch from "node:fetch";
+// server.js
+import express from "express";
+import axios from "axios";
 
-const NODE_TXT_URL = "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-const CORS_PROXY = "https://cors-anywhere-railway-production.up.railway.app/";
+/* =========================
+ * Konfigurasi
+ * ========================= */
+const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
+const CORS_PROXY = process.env.CORS_PROXY || "https://cors-anywhere-railway-production.up.railway.app";
+
+/* =========================
+ * Helpers
+ * ========================= */
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function parseList(txt) {
+  return (txt || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+}
+
+function isJson(body) {
+  if (!body) return false;
+  try {
+    JSON.parse(body);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 function isCaptcha(body) {
   if (!body) return false;
@@ -15,73 +39,91 @@ function isCaptcha(body) {
   );
 }
 
-function isJsonString(str) {
-  if (!str) return false;
+function buildProxyUrl(url) {
+  return `${CORS_PROXY}/${url}`;
+}
+
+async function fetchText(url) {
   try {
-    JSON.parse(str);
-    return true;
-  } catch {
-    return false;
+    const resp = await axios.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 30000,
+      responseType: "text",
+      validateStatus: () => true
+    });
+    return { ok: true, text: typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data) };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 }
 
-async function fetchURL(url, useProxy = false) {
-  const finalURL = useProxy ? CORS_PROXY + url : url;
-  try {
-    const res = await fetch(finalURL, { headers: { "User-Agent": "Mozilla/5.0" } });
-    const text = await res.text();
-    return {
-      ok: true,
-      text,
-      json: isJsonString(text),
-      captcha: isCaptcha(text),
-    };
-  } catch (err) {
-    return { ok: false, text: null, json: false, captcha: false };
-  }
-}
-
-async function processUrl(url) {
-  console.log(`🔗 URL: ${url}`);
-
+/* =========================
+ * Core Logic
+ * ========================= */
+async function hitUrl(url) {
+  console.log(`\n🔗 URL: ${url}`);
+  
   // Direct request
-  const direct = await fetchURL(url, false);
-  if (direct.ok && direct.json && !direct.captcha) {
-    console.log("✅ Direct JSON OK");
-    console.log(JSON.stringify(JSON.parse(direct.text), null, 2), "\n");
+  const direct = await fetchText(url);
+
+  if (!direct.ok) {
+    console.log(`❌ Direct request failed: ${direct.error}`);
+  } else if (isCaptcha(direct.text)) {
+    console.log("🛑 Direct CAPTCHA detected → pakai proxy");
+  } else if (isJson(direct.text)) {
+    console.log("✅ Direct OK | JSON");
     return;
-  } else if (direct.captcha) {
-    console.log("🛑 Direct CAPTCHA, coba proxy...");
   } else {
-    console.log("⚠️ Direct bukan JSON, coba proxy...");
+    console.log("❌ Direct bukan JSON");
   }
 
-  // Proxy fallback
-  const proxy = await fetchURL(url, true);
-  if (proxy.ok && proxy.json && !proxy.captcha) {
-    console.log("✅ Proxy JSON OK");
-    console.log(JSON.stringify(JSON.parse(proxy.text), null, 2), "\n");
-  } else if (proxy.captcha) {
-    console.log("🛑 Proxy CAPTCHA juga\n");
+  // Proxy request
+  const proxyUrl = buildProxyUrl(url);
+  const proxied = await fetchText(proxyUrl);
+
+  if (!proxied.ok) {
+    console.log(`❌ Proxy request failed: ${proxied.error}`);
+  } else if (isCaptcha(proxied.text)) {
+    console.log("❌ PROXY CAPTCHA juga terdeteksi");
+  } else if (isJson(proxied.text)) {
+    console.log("✅ PROXY OK | JSON");
   } else {
-    console.log("⚠️ Proxy bukan JSON\n");
+    console.log("❌ PROXY bukan JSON");
   }
 }
 
-async function loopForever() {
+async function mainLoop() {
   while (true) {
     try {
-      const res = await fetch(NODE_TXT_URL);
-      const txt = await res.text();
-      const urls = txt.split("\n").map(x => x.trim()).filter(Boolean);
-
-      for (const url of urls) {
-        await processUrl(url);
+      const listResp = await fetchText(SOURCE_URL);
+      if (!listResp.ok) {
+        console.log(`❌ Gagal ambil node.txt: ${listResp.error}`);
+        await sleep(5000);
+        continue;
       }
+      const urls = parseList(listResp.text);
+      if (!urls.length) {
+        console.log("ℹ️ node.txt kosong");
+        await sleep(5000);
+        continue;
+      }
+
+      for (const u of urls) {
+        await hitUrl(u);
+      }
+
     } catch (e) {
-      console.log("❌ Gagal ambil daftar URL:", e.message);
+      console.log(`❌ Loop error: ${e.message}`);
     }
   }
 }
 
-loopForever();
+/* =========================
+ * HTTP Health Check
+ * ========================= */
+const app = express();
+app.get("/", (req, res) => res.send("✅ URL Runner Active"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 Web service port ${PORT}`));
+
+mainLoop();
