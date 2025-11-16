@@ -2,12 +2,10 @@
   "name": "railway-url-runner-auto-switch",
   "version": "1.0.0",
   "type": "module",
-  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.7.7",
-    "express": "^4.19.2"
+    "node-fetch": "^3.4.0"
   }
 }
