@@ -14,14 +14,13 @@ const SOURCE_URL =
 const USE_PROXY = Number(process.env.USE_PROXY || 0);
 const CORS_PROXY =
   process.env.CORS_PROXY ||
-  "https://cors-anywhere-vercel-dzone.vercel.app/";
+  "https://cors-anywhere-production-b0eb.up.railway.app"; // ⬅️ DIUBAH: proxy Anda
 
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
-const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 5000); // ⬅️ DIUBAH: 250 → 5000
-const CONCURRENCY = Number(process.env.CONCURRENCY || 1); // ⬅️ DIUBAH: 0 → 1
+const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 5000);
+const CONCURRENCY = Number(process.env.CONCURRENCY || 1);
 
-// ⬇️ BARU: Tambah setting untuk retry dan delay
 const MAX_RETRIES = Number(process.env.MAX_RETRIES || 2);
 const MIN_DELAY_MS = Number(process.env.MIN_DELAY_MS || 3000);
 const MAX_DELAY_MS = Number(process.env.MAX_DELAY_MS || 8000);
@@ -29,12 +28,12 @@ const MAX_DELAY_MS = Number(process.env.MAX_DELAY_MS || 8000);
 /* =========================
  * Axios client (keep-alive)
  * ========================= */
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 }); // ⬅️ DIKURANGI: 200 → 50
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 }); // ⬅️ DIKURANGI: 200 → 50
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
 
 const client = axios.create({
   timeout: REQUEST_TIMEOUT,
-  maxRedirects: 5, // ⬅️ DITAMBAH: 3 → 5
+  maxRedirects: 5,
   httpAgent,
   httpsAgent,
   validateStatus: () => true,
@@ -103,8 +102,17 @@ function getRandomUserAgent() {
   return agents[Math.floor(Math.random() * agents.length)];
 }
 
+// ⬇️ BARU: Build URL dengan proxy (dengan header yang diperlukan)
+function buildRequestUrl(targetUrl, useProxy = false) {
+  if (useProxy) {
+    const singleSlash = toSingleSlashScheme(targetUrl);
+    return `${CORS_PROXY}/${singleSlash}`; // ⬅️ TAMBAH slash
+  }
+  return normalizeDirectUrl(targetUrl);
+}
+
 /* =========================
- * Core - MODIFIKASI hitOne SAJA
+ * Core - MODIFIKASI BESAR: hitOne dengan proxy fallback
  * ========================= */
 async function fetchList() {
   console.log(`📥 Ambil daftar URL dari: ${SOURCE_URL}`);
@@ -117,70 +125,79 @@ async function fetchList() {
   return list;
 }
 
-function buildRequestUrl(targetUrl) {
-  if (USE_PROXY) {
-    const singleSlash = toSingleSlashScheme(targetUrl);
-    return `${CORS_PROXY}${singleSlash}`;
-  }
-  return normalizeDirectUrl(targetUrl);
-}
-
-// ⬇️ DIUBAH: hitOne dengan header better dan retry mechanism
-async function hitOne(targetUrl, retryCount = 0) {
-  const reqUrl = buildRequestUrl(targetUrl);
+// ⬇️ DIUBAH TOTAL: hitOne dengan proxy fallback ketika CAPTCHA
+async function hitOne(targetUrl, retryCount = 0, useProxy = false) {
+  const reqUrl = buildRequestUrl(targetUrl, useProxy);
   const t0 = Date.now();
   let resp;
   
   try {
+    // ⬇️ HEADER BERBEDA untuk proxy vs direct
+    const headers = useProxy ? {
+      "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent": getRandomUserAgent(),
+      "Origin": "https://example.com", // ⬅️ WAJIB untuk cors-anywhere
+      "X-Requested-With": "XMLHttpRequest" // ⬅️ WAJIB untuk cors-anywhere
+    } : {
+      "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "User-Agent": getRandomUserAgent()
+    };
+
     resp = await client.get(reqUrl, {
       responseType: "text",
-      headers: {
-        "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "User-Agent": getRandomUserAgent(), // ⬅️ DIUBAH: Random UA
-      },
+      headers: headers,
     });
   } catch (err) {
-    console.log(`❌ ${targetUrl} | ERROR request: ${err.message} ${USE_PROXY ? "(proxy)" : "(direct)"}`);
-    return { ok: false, status: 0 };
+    console.log(`❌ ${targetUrl} | ERROR: ${err.message} ${useProxy ? "(PROXY)" : "(direct)"}`);
+    return { ok: false, status: 0, useProxy };
   }
 
   const ms = Date.now() - t0;
   const bodyText = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
 
-  // ⬇️ BARU: Cek CAPTCHA dan retry
+  // ⬇️ LOGIC BARU: Jika CAPTCHA dan belum pakai proxy, coba dengan proxy
   if (isCaptchaResponse(bodyText)) {
-    console.log(`🛑 CAPTCHA Ditemukan | ${targetUrl} | HTTP ${resp.status} | ${ms} ms`);
+    console.log(`🛑 CAPTCHA Ditemukan | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${useProxy ? "(PROXY)" : "(direct)"}`);
     
-    if (retryCount < MAX_RETRIES) {
-      const retryDelay = 5000 * (retryCount + 1); // 5s, 10s, 15s
-      console.log(`⏳ Retry ${retryCount + 1}/${MAX_RETRIES} dalam ${retryDelay}ms...`);
-      await sleep(retryDelay);
-      return hitOne(targetUrl, retryCount + 1);
+    // Jika belum pakai proxy, coba dengan proxy
+    if (!useProxy && retryCount === 0) {
+      console.log(`🔄 Coba dengan PROXY...`);
+      await sleep(3000);
+      return hitOne(targetUrl, retryCount + 1, true); // Retry dengan proxy
     }
     
-    return { ok: false, status: resp.status, captcha: true };
+    // Jika sudah pakai proxy tapi masih CAPTCHA, coba retry biasa
+    if (retryCount < MAX_RETRIES) {
+      const retryDelay = 5000 * (retryCount + 1);
+      console.log(`⏳ Retry ${retryCount + 1}/${MAX_RETRIES} dalam ${retryDelay}ms...`);
+      await sleep(retryDelay);
+      return hitOne(targetUrl, retryCount + 1, useProxy);
+    }
+    
+    return { ok: false, status: resp.status, captcha: true, useProxy };
   }
 
   if (isJsonResponse(resp, bodyText)) {
-    console.log(`✅ JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${USE_PROXY ? "(proxy)" : "(direct)"}`);
-    return { ok: true, status: resp.status };
+    console.log(`✅ JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${useProxy ? "(PROXY)" : "(direct)"}`);
+    return { ok: true, status: resp.status, useProxy };
   } else {
     console.log(
-      `⚠️ BUKAN JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${USE_PROXY ? "(proxy)" : "(direct)"}`
+      `⚠️ BUKAN JSON | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${useProxy ? "(PROXY)" : "(direct)"}`
     );
-    return { ok: false, status: resp.status };
+    return { ok: false, status: resp.status, useProxy };
   }
 }
 
-// ⬇️ DIUBAH SEDIKIT: runBatched dengan random delay
+// ⬇️ DIUBAH: runBatched
 async function runBatched(urls) {
   if (urls.length === 0) return;
 
   if (CONCURRENCY <= 0) {
-    // Sequential dengan delay antar request
+    // Sequential dengan delay
     for (let i = 0; i < urls.length; i++) {
-      await hitOne(urls[i]);
+      await hitOne(urls[i]); // Mulai dengan direct request
       if (i < urls.length - 1) {
         const randomDelay = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
         await sleep(randomDelay);
@@ -194,7 +211,7 @@ async function runBatched(urls) {
     await Promise.all(chunk.map(u => hitOne(u)));
     
     if (i + CONCURRENCY < urls.length && PER_URL_DELAY_MS > 0) {
-      const randomDelay = PER_URL_DELAY_MS + Math.random() * 2000; // Randomize delay
+      const randomDelay = PER_URL_DELAY_MS + Math.random() * 2000;
       await sleep(randomDelay);
     }
   }
@@ -202,7 +219,7 @@ async function runBatched(urls) {
 
 async function mainLoop() {
   console.log(
-    `🚀 Mulai | mode=${USE_PROXY ? "proxy" : "direct"} | concurrency=${CONCURRENCY} | delays=${MIN_DELAY_MS}-${MAX_DELAY_MS}ms | retries=${MAX_RETRIES}`
+    `🚀 Mulai | mode=${USE_PROXY ? "proxy-first" : "direct-first"} | concurrency=${CONCURRENCY} | proxy-fallback=true`
   );
   while (true) {
     try {
@@ -231,17 +248,18 @@ const app = express();
 app.get("/", (req, res) => {
   res.type("text/plain").send(
     [
-      "✅ Railway URL Runner (CAPTCHA-aware) aktif.",
-      `MODE=${USE_PROXY ? "proxy" : "direct"}`,
+      "✅ Railway URL Runner (PROXY Fallback) aktif.",
+      `MODE=${USE_PROXY ? "proxy-first" : "direct-first"}`,
       `SOURCE_URL=${SOURCE_URL}`,
+      `CORS_PROXY=${CORS_PROXY}`,
       `CONCURRENCY=${CONCURRENCY}`,
-      `DELAYS=${MIN_DELAY_MS}-${MAX_DELAY_MS}ms`,
       `RETRIES=${MAX_RETRIES}`,
       "",
-      "Fitur anti-CAPTCHA:",
-      "• Random User-Agent",
-      "• Retry mechanism", 
-      "• Realistic delays"
+      "Fitur PROXY Fallback:",
+      "1. Request direct dulu",
+      "2. Jika ketemu CAPTCHA, switch ke PROXY",
+      "3. PROXY header: Origin + X-Requested-With",
+      "4. Random User-Agent"
     ].join("\n")
   );
 });
