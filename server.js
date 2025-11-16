@@ -1,6 +1,4 @@
-// server.js
 import fs from "fs/promises";
-import fetch from "node-fetch";
 
 const CORS_PROXY = "https://cors-anywhere-railway-production.up.railway.app/";
 
@@ -58,24 +56,24 @@ async function fetchURL(url, useProxy = false) {
 }
 
 async function processUrl(url) {
-  console.log(`URL: ${url}`);
+  console.log(`🔗 URL: ${url}`);
 
   // Direct request
   const direct = await fetchURL(url, false);
   if (direct.ok && direct.json && !direct.captcha) {
-    console.log("[Direct] JSON OK\n");
+    console.log("✅ Direct JSON OK\n");
     return;
   } else {
-    console.log("[Direct] JSON FAIL / CAPTCHA");
+    console.log("🛑 Direct FAIL / CAPTCHA");
   }
 
   // Proxy fallback
   const proxy = await fetchURL(url, true);
   if (proxy.ok && proxy.json && !proxy.captcha) {
-    console.log("[Proxy ] JSON OK\n");
+    console.log("✅ Proxy JSON OK\n");
     return;
   } else {
-    console.log("[Proxy ] JSON FAIL / CAPTCHA\n");
+    console.log("🛑 Proxy FAIL / CAPTCHA\n");
   }
 }
 
@@ -90,7 +88,7 @@ async function loopForever() {
       }
 
     } catch (e) {
-      console.log("Gagal membaca node.txt:", e.message);
+      console.log("❌ Gagal membaca node.txt:", e.message);
     }
   }
 }
