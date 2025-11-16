@@ -1,344 +1,149 @@
-// server.js
-import express from "express";
 import axios from "axios";
-import http from "http";
-import https from "https";
-import crypto from "crypto";
 
-/* =========================
- * ENV & Konfigurasi
- * ========================= */
-const SOURCE_URL =
-  process.env.SOURCE_URL ||
-  "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
-
-const USE_PROXY = Number(process.env.USE_PROXY || 0);
-const CORS_PROXY =
-  process.env.CORS_PROXY ||
-  "https://cors-anywhere-railway-production.up.railway.app";
-
-const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 30000);
-const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
-const PER_URL_DELAY_MS = Number(process.env.PER_URL_DELAY_MS || 5000);
-const CONCURRENCY = Number(process.env.CONCURRENCY || 1);
-
-const MAX_RETRIES = Number(process.env.MAX_RETRIES || 2);
-const MIN_DELAY_MS = Number(process.env.MIN_DELAY_MS || 3000);
-const MAX_DELAY_MS = Number(process.env.MAX_DELAY_MS || 8000);
-
-/* =========================
- * Axios client (keep-alive)
- * ========================= */
-const httpAgent = new http.Agent({ 
-  keepAlive: true, 
-  maxSockets: 50,
-  timeout: 30000
-});
-const httpsAgent = new https.Agent({ 
-  keepAlive: true, 
-  maxSockets: 50,
-  timeout: 30000,
-  rejectUnauthorized: false
-});
+const NODE_LIST_URL = "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
+const CORS_PROXY = "https://cors-anywhere-railway-production.up.railway.app/";
 
 const client = axios.create({
-  timeout: REQUEST_TIMEOUT,
-  maxRedirects: 5,
-  httpAgent,
-  httpsAgent,
-  validateStatus: () => true,
-});
-
-const proxyClient = axios.create({
   timeout: 30000,
-  maxRedirects: 5,
-  httpAgent: new http.Agent({ 
-    keepAlive: false,
-    timeout: 30000
-  }),
-  httpsAgent: new https.Agent({ 
-    keepAlive: false,
-    timeout: 30000,
-    rejectUnauthorized: false
-  }),
-  validateStatus: () => true,
+  maxContentLength: Infinity,
+  maxBodyLength: Infinity
 });
 
-/* =========================
- * Helpers
- * ========================= */
-function normalizeDirectUrl(u) {
-  if (!/^https?:\/\//i.test(u)) return "https://" + u.replace(/^\/+/, "");
-  return u;
+function sleep(ms) {
+  return new Promise(res => setTimeout(res, ms));
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function parseList(txt) {
-  return (txt || "")
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter((s) => s && !s.startsWith("#"));
+function isCaptcha(body) {
+  if (!body) return false;
+  const t = body.toLowerCase();
+  return (
+    t.includes("captcha") ||
+    t.includes("verify you are human") ||
+    t.includes("verification") ||
+    t.includes("robot") ||
+    t.includes("cloudflare") ||
+    t.includes("are you human")
+  );
 }
 
-function isJsonResponse(resp, bodyStr) {
-  const ct = (resp.headers?.["content-type"] || "").toLowerCase();
-  if (ct.includes("application/json")) return true;
-  if (typeof resp.data === "object" && resp.data !== null) return true;
-  if (typeof bodyStr === "string") {
-    const trimmed = bodyStr.trim();
-    if (!trimmed) return false;
-    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || 
-        (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-      try { JSON.parse(trimmed); return true } catch(e) { return false }
-    }
-  }
-  return false;
-}
-
-function shortBody(body) {
-  const s = typeof body === "string" ? body : JSON.stringify(body);
-  if (s.length > 150) return s.slice(0, 150) + " …";
-  return s;
-}
-
-function isCaptchaResponse(bodyStr) {
-  if (!bodyStr || typeof bodyStr !== 'string') return false;
-  const lowerBody = bodyStr.toLowerCase();
-  return lowerBody.includes('captcha') || 
-         lowerBody.includes('zcaptcha') ||
-         lowerBody.includes('human verification') ||
-         (lowerBody.includes('verification') && lowerBody.includes('human'));
-}
-
-function getRandomUserAgent() {
-  const agents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36'
-  ];
-  return agents[Math.floor(Math.random() * agents.length)];
-}
-
-function generateZcomHash() {
-  const timestamp = Date.now();
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  const hashInput = `${timestamp}${randomStr}tessa.cz`;
-  return crypto.createHash('sha256').update(hashInput).digest('hex');
-}
-
-function getDomainFromUrl(url) {
+function isJsonString(str) {
+  if (!str) return false;
   try {
-    const urlObj = new URL(normalizeDirectUrl(url));
-    return urlObj.origin;
+    JSON.parse(str);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchNodeList() {
+  try {
+    const res = await client.get(NODE_LIST_URL, { responseType: "text" });
+    return res.data.split("\n").map(x => x.trim()).filter(Boolean);
   } catch (e) {
-    return "https://example.com";
+    console.log("❌ Gagal mengambil node.txt:", e.message);
+    return [];
   }
 }
 
-function buildRequestUrl(targetUrl, forceProxy = false) {
-  const urlObj = new URL(targetUrl);
-  urlObj.searchParams.set('ZCOMAFWCHECKHASH', generateZcomHash());
-  const fullUrl = urlObj.toString();
-
-  if (forceProxy) return `${CORS_PROXY}/${fullUrl}`;
-  return normalizeDirectUrl(fullUrl);
-}
-
-function parseJsonResponse(bodyStr) {
-  try { return typeof bodyStr === 'string' ? JSON.parse(bodyStr) : bodyStr; } 
-  catch(e) { return null }
-}
-
-function logResponse(targetUrl, resp, ms, useProxy, bodyText) {
-  const isJson = isJsonResponse(resp, bodyText);
-  const status = resp.status;
-  const size = bodyText.length;
-  const mode = useProxy ? "(PROXY)" : "(direct)";
-
-  if (isJson) {
-    const jsonData = parseJsonResponse(bodyText);
-    console.log(`✅ JSON ${status} | ${targetUrl} | ${ms} ms ${mode} | Size: ${size} chars`);
-    if (jsonData && typeof jsonData === 'object') {
-      const keys = Object.keys(jsonData).slice(0, 3);
-      const preview = keys.map(k => {
-        const v = jsonData[k];
-        return `${k}: ${typeof v === 'string' ? v.substring(0,30)+(v.length>30?'...':'') : typeof v}`;
-      }).join(', ');
-      if(preview) console.log(`   📊 JSON Preview: { ${preview} }`);
-    }
-  } else if (isCaptchaResponse(bodyText)) {
-    console.log(`🛑 CAPTCHA ${status} | ${targetUrl} | ${ms} ms ${mode} | Size: ${size} chars`);
-    console.log(`   🔒 Terdeteksi halaman CAPTCHA`);
-  } else if (status >= 400) {
-    console.log(`❌ ERROR ${status} | ${targetUrl} | ${ms} ms ${mode} | Size: ${size} chars`);
-    console.log(`   📄 Response: ${shortBody(bodyText)}`);
-  } else {
-    console.log(`⚠️ BUKAN JSON ${status} | ${targetUrl} | ${ms} ms ${mode} | Size: ${size} chars`);
-    console.log(`   📄 Response: ${shortBody(bodyText)}`);
-  }
-}
-
-/* =========================
- * Core
- * ========================= */
-async function fetchList() {
-  console.log(`📥 Ambil daftar URL dari: ${SOURCE_URL}`);
-  const resp = await client.get(SOURCE_URL, { 
-    responseType: "text",
-    headers: {'User-Agent': getRandomUserAgent()}
-  });
-  if (resp.status !== 200) throw new Error(`Gagal ambil node.txt | HTTP ${resp.status}`);
-  const list = parseList(resp.data);
-  console.log(`📄 Dapat ${list.length} URL dari node.txt`);
-  return list;
-}
-
-async function hitOne(targetUrl, retryCount = 0, useProxy = false) {
-  const reqUrl = buildRequestUrl(targetUrl, useProxy);
-  const t0 = Date.now();
-  let resp;
-
+async function requestDirect(url) {
   try {
-    const targetDomain = getDomainFromUrl(targetUrl);
-
-    const headers = {
-      "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Accept-Encoding": "gzip, deflate, br",
-      "User-Agent": getRandomUserAgent(),
-      "Referer": targetDomain + "/",
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": useProxy ? "cors" : "same-origin",
-      "Sec-Fetch-Site": useProxy ? "cross-site" : "same-origin"
-    };
-
-    if(useProxy) {
-      headers["Origin"] = targetDomain;
-      headers["X-Requested-With"] = "XMLHttpRequest";
-      headers["Connection"] = "close";
-    }
-
-    const requestClient = useProxy ? proxyClient : client;
-    resp = await requestClient.get(reqUrl, {
+    const res = await client.get(url, {
       responseType: "text",
-      headers,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      decompress: true
+      headers: {
+        "Accept": "*/*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      }
     });
 
-  } catch(err) {
-    const ms = Date.now() - t0;
-    console.log(`💥 REQUEST ERROR | ${targetUrl} | ${ms} ms ${useProxy ? "(PROXY)" : "(direct)"}`);
-    console.log(`   🚨 Error: ${err.message}`);
+    const body = res.data;
 
-    if(retryCount < MAX_RETRIES) {
-      const retryDelay = 3000 * (retryCount + 1);
-      console.log(`   ⏳ Retry ${retryCount+1}/${MAX_RETRIES} dalam ${retryDelay}ms...`);
-      await sleep(retryDelay);
-      return hitOne(targetUrl, retryCount+1, useProxy);
-    }
-    return { ok:false, status:0, useProxy, error: err.message };
+    return {
+      ok: true,
+      captcha: isCaptcha(body),
+      json: isJsonString(body),
+      body
+    };
+  } catch (e) {
+    return { ok: false, captcha: false, json: false, error: e.message };
   }
-
-  const ms = Date.now() - t0;
-  const bodyText = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
-
-  logResponse(targetUrl, resp, ms, useProxy, bodyText);
-
-  if(isCaptchaResponse(bodyText)) {
-    if(!useProxy) {
-      console.log(`   🔄 CAPTCHA terdeteksi. Gunakan PROXY: ${CORS_PROXY}`);
-      await sleep(2000);
-      return hitOne(targetUrl, retryCount+1, true);
-    }
-    if(retryCount < MAX_RETRIES) {
-      const retryDelay = 5000*(retryCount+1);
-      console.log(`   ⏳ Retry PROXY ${retryCount+1}/${MAX_RETRIES} dalam ${retryDelay}ms...`);
-      await sleep(retryDelay);
-      return hitOne(targetUrl, retryCount+1, true);
-    }
-    return { ok:false, status: resp.status, captcha:true, useProxy };
-  }
-
-  if(isJsonResponse(resp, bodyText)) return { ok:true, status: resp.status, useProxy, json:true };
-  else return { ok:false, status: resp.status, useProxy, json:false };
 }
 
-async function runBatched(urls) {
-  if(urls.length===0) return;
+async function requestProxy(url) {
+  const proxyUrl = CORS_PROXY + url;
 
-  if(CONCURRENCY<=0) {
-    for(let i=0;i<urls.length;i++) {
-      await hitOne(urls[i]);
-      if(i<urls.length-1){
-        const randomDelay = MIN_DELAY_MS + Math.random()*(MAX_DELAY_MS-MIN_DELAY_MS);
-        await sleep(randomDelay);
+  try {
+    const res = await client.get(proxyUrl, {
+      responseType: "text",
+      headers: {
+        "Accept": "*/*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
       }
-    }
+    });
+
+    const body = res.data;
+
+    return {
+      ok: true,
+      captcha: isCaptcha(body),
+      json: isJsonString(body),
+      body,
+      proxy: true
+    };
+  } catch (e) {
+    return { ok: false, captcha: false, json: false, error: e.message, proxy: true };
+  }
+}
+
+async function processUrl(url) {
+  console.log(`\n=============================`);
+  console.log(`🔗 URL: ${url}`);
+
+  // STEP 1 — DIRECT
+  console.log(`➡️ Direct request...`);
+  const direct = await requestDirect(url);
+
+  if (direct.ok && !direct.captcha) {
+    console.log(`✅ Direct OK | JSON: ${direct.json}`);
+    return direct.body;
+  }
+
+  if (direct.ok && direct.captcha) {
+    console.log(`🛑 Direct CAPTCHA | JSON: ${direct.json}`);
   } else {
-    for(let i=0;i<urls.length;i+=CONCURRENCY){
-      const chunk = urls.slice(i,i+CONCURRENCY);
-      await Promise.all(chunk.map(u=>hitOne(u)));
-      if(i+CONCURRENCY<urls.length){
-        const randomDelay = PER_URL_DELAY_MS + Math.random()*2000;
-        await sleep(randomDelay);
-      }
-    }
+    console.log(`❌ Direct Error: ${direct.error}`);
+  }
+
+  console.log(`🔄 Mencoba via PROXY...`);
+
+  // STEP 2 — PROXY
+  const proxy = await requestProxy(url);
+
+  if (proxy.ok && !proxy.captcha) {
+    console.log(`✅ PROXY OK | JSON: ${proxy.json}`);
+    return proxy.body;
+  }
+
+  if (proxy.ok && proxy.captcha) {
+    console.log(`🛑 PROXY CAPTCHA | JSON: ${proxy.json}`);
+  } else {
+    console.log(`❌ PROXY Error: ${proxy.error}`);
+  }
+
+  console.log(`🚨 GAGAL TOTAL: CAPTCHA / ERROR pada kedua metode.`);
+  return null;
+}
+
+async function main() {
+  console.log(`📥 Mengambil daftar URL dari: ${NODE_LIST_URL}`);
+
+  const list = await fetchNodeList();
+
+  console.log(`📄 Dapat ${list.length} URL`);
+
+  for (const u of list) {
+    await processUrl(u);
   }
 }
 
-async function mainLoop() {
-  console.log(`🚀 Mulai URL Runner | mode=${USE_PROXY?"proxy-first":"direct-first"} | concurrency=${CONCURRENCY} | timeout=${REQUEST_TIMEOUT}ms\n`);
-  while(true){
-    try{
-      const list = await fetchList();
-      if(list.length) await runBatched(list);
-      else console.log("ℹ️ node.txt kosong.");
-    } catch(e){
-      console.log(`❌ Loop error: ${e.message}`);
-    }
-    const waitMs = Math.max(0,LOOP_DELAY_MINUTES*60*1000);
-    if(waitMs>0){
-      console.log(`🕒 Tunggu ${LOOP_DELAY_MINUTES} menit sebelum refresh berikutnya...\n`);
-      await sleep(waitMs);
-    } else {
-      console.log(`🔄 Refresh daftar URL...\n`);
-      await sleep(5000);
-    }
-  }
-}
-
-/* =========================
- * HTTP Health Check
- * ========================= */
-const app = express();
-app.get("/", (req,res)=>{
-  res.type("text/plain").send([
-    "✅ Railway URL Runner (Enhanced) aktif.",
-    `MODE=${USE_PROXY?"proxy-first":"direct-first"}`,
-    `SOURCE_URL=${SOURCE_URL}`,
-    `CORS_PROXY=${CORS_PROXY}`,
-    `CONCURRENCY=${CONCURRENCY}`,
-    `TIMEOUT=${REQUEST_TIMEOUT}ms`,
-    "",
-    "Fitur:",
-    "• Auto domain detection", 
-    "• Deteksi JSON akurat",
-    "• Preview JSON response", 
-    "• Auto proxy fallback",
-    "• Detailed logging"
-  ].join("\n"));
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=>console.log(`🌐 Web service di port ${PORT}`));
-
-// Mulai loop
-mainLoop().catch((e)=>{
-  console.error("Fatal error:", e);
-  process.exit(1);
-});
+main();
