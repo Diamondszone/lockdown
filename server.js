@@ -14,7 +14,7 @@ const SOURCE_URL =
 const USE_PROXY = Number(process.env.USE_PROXY || 0);
 const CORS_PROXY =
   process.env.CORS_PROXY ||
-  "https://cors-anywhere-production-b0eb.up.railway.app";
+  "https://cors-anywhere-railway-production.up.railway.app";
 
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
@@ -270,3 +270,4 @@ mainLoop().catch((e) => {
   console.error("Fatal error:", e);
   process.exit(1);
 });
+
