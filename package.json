@@ -1,11 +1,13 @@
 {
   "name": "railway-url-runner-auto-switch",
   "version": "1.0.0",
+  "description": "URL runner auto switch direct/proxy dengan fetch bawaan Node.js",
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
-  "dependencies": {
-    "node-fetch": "^3.4.0"
-  }
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {}
 }
