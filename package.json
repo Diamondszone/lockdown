@@ -1,13 +1,12 @@
 {
   "name": "railway-url-runner-json-check",
   "version": "1.0.0",
-  "description": "URL runner nonstop dengan direct/proxy fallback, cek JSON dari node.txt",
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=22"
-  },
-  "dependencies": {}
+  "dependencies": {
+    "axios": "^1.7.6",
+    "express": "^4.18.2"
+  }
 }
