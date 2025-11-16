@@ -14,7 +14,7 @@ const SOURCE_URL =
 const USE_PROXY = Number(process.env.USE_PROXY || 0);
 const CORS_PROXY =
   process.env.CORS_PROXY ||
-  "https://cors-anywhere-production-b0eb.up.railway.app"; // ⬅️ DIUBAH: proxy Anda
+  "https://cors-anywhere-production-b0eb.up.railway.app";
 
 const REQUEST_TIMEOUT = Number(process.env.REQUEST_TIMEOUT || 60000);
 const LOOP_DELAY_MINUTES = Number(process.env.LOOP_DELAY_MINUTES || 0);
@@ -43,8 +43,9 @@ const client = axios.create({
  * Helpers
  * ========================= */
 
+// ⬇️ DIUBAH: Biarkan URL asli dengan double slash
 function toSingleSlashScheme(url) {
-  return url.replace(/^https?:\/\//i, (m) => m.slice(0, -1));
+  return url; // Kembalikan URL asli tanpa perubahan
 }
 
 function normalizeDirectUrl(u) {
@@ -82,7 +83,6 @@ function shortBody(body) {
   return s.length > 200 ? s.slice(0, 200) + " …" : s;
 }
 
-// ⬇️ BARU: Deteksi CAPTCHA
 function isCaptchaResponse(bodyStr) {
   if (!bodyStr || typeof bodyStr !== 'string') return false;
   const lowerBody = bodyStr.toLowerCase();
@@ -91,7 +91,6 @@ function isCaptchaResponse(bodyStr) {
          lowerBody.includes('human verification');
 }
 
-// ⬇️ BARU: Random User-Agent
 function getRandomUserAgent() {
   const agents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -102,17 +101,16 @@ function getRandomUserAgent() {
   return agents[Math.floor(Math.random() * agents.length)];
 }
 
-// ⬇️ BARU: Build URL dengan proxy (dengan header yang diperlukan)
+// ⬇️ DIUBAH: Build URL dengan format double https://
 function buildRequestUrl(targetUrl, useProxy = false) {
   if (useProxy) {
-    const singleSlash = toSingleSlashScheme(targetUrl);
-    return `${CORS_PROXY}/${singleSlash}`; // ⬅️ TAMBAH slash
+    return `${CORS_PROXY}/${targetUrl}`; // Format: proxy/https://target.com
   }
   return normalizeDirectUrl(targetUrl);
 }
 
 /* =========================
- * Core - MODIFIKASI BESAR: hitOne dengan proxy fallback
+ * Core
  * ========================= */
 async function fetchList() {
   console.log(`📥 Ambil daftar URL dari: ${SOURCE_URL}`);
@@ -125,14 +123,14 @@ async function fetchList() {
   return list;
 }
 
-// ⬇️ DIUBAH TOTAL: hitOne dengan proxy fallback ketika CAPTCHA
+// ⬇️ DIUBAH: hitOne dengan proxy fallback dan format double https://
 async function hitOne(targetUrl, retryCount = 0, useProxy = false) {
   const reqUrl = buildRequestUrl(targetUrl, useProxy);
   const t0 = Date.now();
   let resp;
   
   try {
-    // ⬇️ HEADER BERBEDA untuk proxy vs direct
+    // Header berbeda untuk proxy vs direct
     const headers = useProxy ? {
       "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
@@ -157,7 +155,7 @@ async function hitOne(targetUrl, retryCount = 0, useProxy = false) {
   const ms = Date.now() - t0;
   const bodyText = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
 
-  // ⬇️ LOGIC BARU: Jika CAPTCHA dan belum pakai proxy, coba dengan proxy
+  // Logic: Jika CAPTCHA dan belum pakai proxy, coba dengan proxy
   if (isCaptchaResponse(bodyText)) {
     console.log(`🛑 CAPTCHA Ditemukan | ${targetUrl} | HTTP ${resp.status} | ${ms} ms ${useProxy ? "(PROXY)" : "(direct)"}`);
     
@@ -190,7 +188,6 @@ async function hitOne(targetUrl, retryCount = 0, useProxy = false) {
   }
 }
 
-// ⬇️ DIUBAH: runBatched
 async function runBatched(urls) {
   if (urls.length === 0) return;
 
@@ -257,9 +254,10 @@ app.get("/", (req, res) => {
       "",
       "Fitur PROXY Fallback:",
       "1. Request direct dulu",
-      "2. Jika ketemu CAPTCHA, switch ke PROXY",
+      "2. Jika ketemu CAPTCHA, switch ke PROXY", 
       "3. PROXY header: Origin + X-Requested-With",
-      "4. Random User-Agent"
+      "4. Random User-Agent",
+      "5. Format URL: proxy/https://target.com"
     ].join("\n")
   );
 });
