@@ -1,7 +1,7 @@
 {
-  "name": "railway-url-runner-auto-switch",
+  "name": "railway-url-runner-json-check",
   "version": "1.0.0",
-  "description": "URL runner nonstop dengan direct/proxy fallback, pakai fetch bawaan Node.js",
+  "description": "URL runner nonstop dengan direct/proxy fallback, cek JSON dari node.txt",
   "type": "module",
   "scripts": {
     "start": "node server.js"
