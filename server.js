@@ -1,5 +1,6 @@
-import fs from "fs/promises";
+import fetch from "node:fetch";
 
+const NODE_TXT_URL = "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 const CORS_PROXY = "https://cors-anywhere-railway-production.up.railway.app/";
 
 function isCaptcha(body) {
@@ -26,32 +27,17 @@ function isJsonString(str) {
 
 async function fetchURL(url, useProxy = false) {
   const finalURL = useProxy ? CORS_PROXY + url : url;
-
   try {
-    const res = await fetch(finalURL, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*"
-      }
-    });
-
+    const res = await fetch(finalURL, { headers: { "User-Agent": "Mozilla/5.0" } });
     const text = await res.text();
-
     return {
       ok: true,
       text,
       json: isJsonString(text),
-      captcha: isCaptcha(text)
+      captcha: isCaptcha(text),
     };
-
   } catch (err) {
-    return {
-      ok: false,
-      text: null,
-      json: false,
-      captcha: false
-    };
+    return { ok: false, text: null, json: false, captcha: false };
   }
 }
 
@@ -61,37 +47,41 @@ async function processUrl(url) {
   // Direct request
   const direct = await fetchURL(url, false);
   if (direct.ok && direct.json && !direct.captcha) {
-    console.log("✅ Direct JSON OK\n");
+    console.log("✅ Direct JSON OK");
+    console.log(JSON.stringify(JSON.parse(direct.text), null, 2), "\n");
     return;
+  } else if (direct.captcha) {
+    console.log("🛑 Direct CAPTCHA, coba proxy...");
   } else {
-    console.log("🛑 Direct FAIL / CAPTCHA");
+    console.log("⚠️ Direct bukan JSON, coba proxy...");
   }
 
   // Proxy fallback
   const proxy = await fetchURL(url, true);
   if (proxy.ok && proxy.json && !proxy.captcha) {
-    console.log("✅ Proxy JSON OK\n");
-    return;
+    console.log("✅ Proxy JSON OK");
+    console.log(JSON.stringify(JSON.parse(proxy.text), null, 2), "\n");
+  } else if (proxy.captcha) {
+    console.log("🛑 Proxy CAPTCHA juga\n");
   } else {
-    console.log("🛑 Proxy FAIL / CAPTCHA\n");
+    console.log("⚠️ Proxy bukan JSON\n");
   }
 }
 
 async function loopForever() {
   while (true) {
     try {
-      const content = await fs.readFile("node.txt", "utf8");
-      const urls = content.split("\n").map(x => x.trim()).filter(Boolean);
+      const res = await fetch(NODE_TXT_URL);
+      const txt = await res.text();
+      const urls = txt.split("\n").map(x => x.trim()).filter(Boolean);
 
       for (const url of urls) {
         await processUrl(url);
       }
-
     } catch (e) {
-      console.log("❌ Gagal membaca node.txt:", e.message);
+      console.log("❌ Gagal ambil daftar URL:", e.message);
     }
   }
 }
 
-// Mulai loop nonstop
 loopForever();
