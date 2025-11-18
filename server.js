@@ -10,10 +10,7 @@ const CORS_PROXY =
   process.env.CORS_PROXY ||
   "https://cors-anywhere-railway-production.up.railway.app";
 
-// ==============================
-// Helper
-// ==============================
-
+// ────────────── PARSER ──────────────
 function parseList(txt) {
   return (txt || "")
     .split(/\r?\n/)
@@ -43,18 +40,15 @@ function isCaptcha(body) {
   );
 }
 
-function buildProxyUrl(url) {
-  return `${CORS_PROXY}/${url}`;
-}
-
-async function fetchText(url) {
+const fetchText = async (url) => {
   try {
     const resp = await axios.get(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 25000,
-      responseType: "text",
+      timeout: 20000,
       validateStatus: () => true,
+      responseType: "text",
     });
+
     return {
       ok: true,
       text:
@@ -65,81 +59,80 @@ async function fetchText(url) {
   } catch (e) {
     return { ok: false, error: e.message };
   }
-}
+};
 
-// ==============================
-// Hit URL
-// ==============================
+const buildProxyUrl = (u) => `${CORS_PROXY}/${u}`;
 
+// ────────────── HIT URL ──────────────
 async function hitUrl(url) {
   const direct = await fetchText(url);
-  const directJson = direct.ok && !isCaptcha(direct.text) && isJson(direct.text);
+  const directOk = direct.ok && !isCaptcha(direct.text) && isJson(direct.text);
 
-  if (directJson) {
+  if (directOk) {
     console.log(`🔗 URL: ${url} | ✅ Direct OK | JSON`);
     return;
   }
 
   const proxied = await fetchText(buildProxyUrl(url));
-  const proxyJson =
+  const proxyOk =
     proxied.ok && !isCaptcha(proxied.text) && isJson(proxied.text);
 
-  if (proxyJson) {
+  if (proxyOk) {
     console.log(`🔗 URL: ${url} | ✅ Proxy OK | JSON`);
   } else {
     console.log(`🔗 URL: ${url} | ❌ Direct & Proxy | BUKAN JSON`);
   }
 }
 
-// ==============================
-// MAIN LOOP — PARALLEL REAL
-// ==============================
+// ────────────── PARALLEL WORKER ──────────────
+// Model worker queue sungguhan
 
 async function mainLoop() {
-  const CONCURRENCY = 10;
+  const WORKERS = 20; // realtime parallel queue worker
 
   while (true) {
     try {
+      // Ambil list terbaru
       const listResp = await fetchText(SOURCE_URL);
       const urls = listResp.ok ? parseList(listResp.text) : [];
 
-      console.log(`\n=== Loaded ${urls.length} URLs ===`);
-
-      let index = 0;
-
-      async function next() {
-        const i = index++;
-        if (i >= urls.length) return;
-
-        const url = urls[i];
-
-        hitUrl(url).finally(() => {
-          next(); // langsung ambil URL berikutnya ketika 1 selesai
-        });
+      if (urls.length === 0) {
+        console.log("❌ SOURCE kosong, ulangi…");
+        continue;
       }
 
-      // Jalankan 20 paralel executor
-      const starters = [];
-      for (let i = 0; i < CONCURRENCY; i++) {
-        starters.push(next());
+      console.log(`📌 Memuat ${urls.length} URL…`);
+
+      let current = 0;
+
+      // Worker hidup terus → selesai 1, langsung ambil 1 baru
+      async function worker() {
+        while (true) {
+          let u = urls[current++];
+          if (!u) break;
+          await hitUrl(u);
+        }
       }
 
-      await Promise.all(starters);
-    } catch (e) {
-      console.log(`❌ Loop error: ${e.message}`);
+      // Jalankan worker paralel
+      const pool = [];
+      for (let i = 0; i < WORKERS; i++) {
+        pool.push(worker());
+      }
+
+      await Promise.all(pool);
+    } catch (err) {
+      console.log("❌ ERROR LOOP:", err.message);
     }
   }
 }
 
-// ==============================
-// HTTP API Health Check
-// ==============================
-
+// ────────────── HTTP STATUS ──────────────
 const app = express();
-app.get("/", (req, res) => res.send("✅ URL Runner Active"));
+app.get("/", (req, res) => res.send("URL Runner Active"));
 app.listen(process.env.PORT || 3000, () =>
-  console.log("🌐 Web service running")
+  console.log("🌐 Web server OK")
 );
 
-// Start engine
+// Mulai mesin
 mainLoop();
