@@ -49,19 +49,51 @@ async function hitUrl(url) {
   }
 }
 
+// async function mainLoop() {
+//   while (true) {
+//     try {
+//       const listResp = await fetchText(SOURCE_URL);
+//       const urls = listResp.ok ? parseList(listResp.text) : [];
+//       for (const u of urls) {
+//         await hitUrl(u);
+//       }
+//     } catch (e) {
+//       console.log(`❌ Loop error: ${e.message}`);
+//     }
+//   }
+// }
+
 async function mainLoop() {
+  const CONCURRENCY = 20; // jumlah worker paralel
+
   while (true) {
     try {
       const listResp = await fetchText(SOURCE_URL);
       const urls = listResp.ok ? parseList(listResp.text) : [];
-      for (const u of urls) {
-        await hitUrl(u);
+
+      let index = 0;
+
+      async function worker() {
+        while (index < urls.length) {
+          const u = urls[index++];
+          await hitUrl(u);
+        }
       }
+
+      // buat worker pool paralel
+      const workers = [];
+      for (let i = 0; i < CONCURRENCY; i++) {
+        workers.push(worker());
+      }
+
+      await Promise.all(workers);
+
     } catch (e) {
       console.log(`❌ Loop error: ${e.message}`);
     }
   }
 }
+
 
 // HTTP Health Check
 const app = express();
@@ -69,3 +101,4 @@ app.get("/", (req, res) => res.send("✅ URL Runner Active"));
 app.listen(process.env.PORT || 3000, () => console.log("🌐 Web service running"));
 
 mainLoop();
+
