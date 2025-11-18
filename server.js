@@ -5,16 +5,17 @@ import axios from "axios";
 const SOURCE_URL = process.env.SOURCE_URL || "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 const CORS_PROXY = process.env.CORS_PROXY || "https://cors-anywhere-railway-production.up.railway.app";
 
-// ======================================
-// Helper
-// ======================================
+// =============================
+// Helpers
+// =============================
 function parseList(txt) {
   return (txt || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 }
 
 function isJson(body) {
   if (!body) return false;
-  try { JSON.parse(body); return true; } catch { return false; }
+  try { JSON.parse(body); return true; }
+  catch { return false; }
 }
 
 function isCaptcha(body) {
@@ -36,23 +37,20 @@ async function fetchText(url) {
   try {
     const resp = await axios.get(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 30000,
+      timeout: 15000,
       responseType: "text",
       validateStatus: () => true
     });
 
-    return {
-      ok: true,
-      text: typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data)
-    };
+    return { ok: true, text: typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data) };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 }
 
-// ======================================
-// Logika hit URL
-// ======================================
+// =============================
+// Hit URL logic
+// =============================
 async function hitUrl(url) {
   try {
     const direct = await fetchText(url);
@@ -74,26 +72,26 @@ async function hitUrl(url) {
   }
 }
 
-// ======================================
-// QUEUE GLOBAL
-// ======================================
-let urlQueue = [];
-let pointer = 0;
+// =============================
+// Global Queue
+// =============================
+let queue = [];
+let index = 0;
 
-// ======================================
-// Load awal
-// ======================================
+// =============================
+// Load awal file node.txt
+// =============================
 async function loadInitial() {
   const res = await fetchText(SOURCE_URL);
   if (res.ok) {
-    urlQueue = parseList(res.text);
-    console.log(`📌 Load awal: ${urlQueue.length} URL`);
+    queue = parseList(res.text);
+    console.log(`📌 Loaded ${queue.length} URL`);
   }
 }
 
-// ======================================
-// Tambah URL baru tiap 5 detik
-// ======================================
+// =============================
+// Cek URL baru setiap 10 detik
+// =============================
 async function refreshList() {
   setInterval(async () => {
     const res = await fetchText(SOURCE_URL);
@@ -102,51 +100,59 @@ async function refreshList() {
     const latest = parseList(res.text);
 
     for (const u of latest) {
-      if (!urlQueue.includes(u)) {
-        urlQueue.push(u);
-        console.log(`➕ URL baru: ${u}`);
+      if (!queue.includes(u)) {
+        queue.push(u);
+        console.log(`➕ URL baru masuk queue: ${u}`);
       }
     }
 
-  }, 5000);
+  }, 10000);
 }
 
-// ======================================
-// TRUE PARALLEL WORKERS
-// ======================================
+// =============================
+// Worker Stabil
+// =============================
 async function worker(id) {
   while (true) {
-    if (urlQueue.length === 0) continue;
+    if (queue.length === 0) {
+      await new Promise(r => setTimeout(r, 100));
+      continue;
+    }
 
-    if (pointer >= urlQueue.length) pointer = 0;
+    if (index >= queue.length) {
+      index = 0;
+    }
 
-    const current = urlQueue[pointer++];
-    await hitUrl(current); // SELESAI → LANGSUNG AMBIL URL BARU (NO DELAY)
+    const url = queue[index++];
+
+    await hitUrl(url);
+
+    // micro delay supaya tidak spam (sangat penting)
+    await new Promise(r => setTimeout(r, 25));
   }
 }
 
 async function startWorkers() {
-  const TOTAL = 20; // jumlah worker paralel sebenarnya
-
-  console.log(`🚀 Menjalankan ${TOTAL} worker paralel…`);
+  const TOTAL = 10; // stabil, cepat, tidak overload
+  console.log(`🚀 Starting ${TOTAL} workers…`);
 
   for (let i = 0; i < TOTAL; i++) {
-    worker(i); // TIDAK MENUNGGU — langsung jalan semua
+    worker(i); // fire and forget
   }
 }
 
-// ======================================
-// WEB SERVER
-// ======================================
+// =============================
+// Web Server
+// =============================
 const app = express();
 app.get("/", (req, res) => res.send("✅ URL Runner Active"));
 app.listen(process.env.PORT || 3000, () =>
-  console.log("🌐 Web service running")
+  console.log("🌐 Service Running")
 );
 
-// ======================================
-// START
-// ======================================
+// =============================
+// Start System
+// =============================
 (async () => {
   await loadInitial();
   refreshList();
