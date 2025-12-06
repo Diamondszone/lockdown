@@ -85,36 +85,68 @@ function isCaptcha(body) {
   );
 }
 
+// TAMBAHKAN SETELAH fungsi isCaptcha:
+function getStatusText(status) {
+  const statusMap = {
+    0: 'Network Error',
+    200: 'OK',
+    201: 'Created',
+    204: 'No Content',
+    301: 'Moved Permanently',
+    302: 'Found',
+    304: 'Not Modified',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not Found',
+    405: 'Method Not Allowed',
+    408: 'Request Timeout',
+    429: 'Too Many Requests',
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable',
+    504: 'Gateway Timeout'
+  };
+  return statusMap[status] || `Status ${status}`;
+}
+
+// GANTI fungsi fetchText yang LAMA dengan INI:
 const fetchText = async (url) => {
   try {
     const resp = await axios.get(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 15000, // Turun dari 20s ke 15s
-      validateStatus: () => true,
+      timeout: 15000,
+      validateStatus: () => true,  // Biarkan true untuk dapat semua response
       responseType: "text",
     });
 
     return {
       ok: true,
-      text:
-        typeof resp.data === "string"
-          ? resp.data
-          : JSON.stringify(resp.data),
+      status: resp.status,  // <-- TAMBAHKAN INI
+      statusText: resp.statusText,  // <-- TAMBAHKAN INI
+      text: typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data),
     };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { 
+      ok: false, 
+      error: e.message,
+      status: 0,  // 0 untuk network error
+      statusText: e.message
+    };
   }
 };
 
 const buildProxyUrl = (u) => `${CORS_PROXY}/${u}`;
 
 // ======================== HIT URL ===========================
+
 async function hitUrl(url) {
   stats.totalHits++;
   stats.lastUpdate = new Date().toISOString();
   
   const direct = await fetchText(url);
-  const directOk = direct.ok && !isCaptcha(direct.text) && isJson(direct.text);
+  // TAMBAHKAN CHECK: status === 200
+  const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
 
   if (directOk) {
     stats.success++;
@@ -125,7 +157,8 @@ async function hitUrl(url) {
   }
 
   const proxied = await fetchText(buildProxyUrl(url));
-  const proxyOk = proxied.ok && !isCaptcha(proxied.text) && isJson(proxied.text);
+  // TAMBAHKAN CHECK: status === 200
+  const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
 
   if (proxyOk) {
     stats.success++;
@@ -137,7 +170,16 @@ async function hitUrl(url) {
     stats.failed++;
     failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
     successUrls.delete(url);
-    broadcastLog(`❌ ${url}`, "error");
+    
+    // TAMBAHKAN INFORMASI ERROR YANG LEBIH DETAIL
+    let errorMsg = `❌ ${url}`;
+    if (direct.status && direct.status !== 200) {
+      errorMsg += ` [${direct.status}]`;
+    } else if (direct.error) {
+      errorMsg += ` [${direct.error}]`;
+    }
+    
+    broadcastLog(errorMsg, "error");
     return { success: false, url };
   }
 }
