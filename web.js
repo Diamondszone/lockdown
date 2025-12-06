@@ -982,8 +982,8 @@ app.get("/", (req, res) => {
     .empty-state {
       text-align: center;
       padding: 60px 20px;
-           color: #a78bfa;
-    }
+      color: #a78bfa;
+       }
 
     .empty-state i {
       font-size: 48px;
@@ -1176,19 +1176,19 @@ app.get("/", (req, res) => {
           
           // Random position
           const left = Math.random() * 100;
-          metric.style.left = `${left}%`;
+          metric.style.left = left + '%';
           
           // Random animation duration (3-8 seconds)
           const duration = 3 + Math.random() * 5;
-          metric.style.animationDuration = `${duration}s`;
+          metric.style.animationDuration = duration + 's';
           
           // Random animation delay
           const delay = Math.random() * 5;
-          metric.style.animationDelay = `${delay}s`;
+          metric.style.animationDelay = delay + 's';
           
           // Random font size
           const size = 16 + Math.random() * 12;
-          metric.style.fontSize = `${size}px`;
+          metric.style.fontSize = size + 'px';
           
           // Random opacity
           const opacity = 0.3 + Math.random() * 0.5;
@@ -1233,20 +1233,19 @@ app.get("/", (req, res) => {
     // Toast notification function
     function showToast(message, type = 'info') {
       const toast = document.createElement('div');
-      toast.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        background: ${type === 'success' ? 'rgba(0, 255, 136, 0.9)' : 'rgba(255, 42, 109, 0.9)'};
-        color: white;
-        border-radius: 8px;
-        font-weight: 600;
-        z-index: 10000;
-        animation: slideIn 0.3s ease-out, slideOut 0.3s ease-in 2.7s;
-        box-shadow: 0 0 20px ${type === 'success' ? 'rgba(0, 255, 136, 0.5)' : 'rgba(255, 42, 109, 0.5)'};
-        border: 1px solid ${type === 'success' ? '#00ff88' : '#ff2a6d'};
-      `;
+      toast.style.cssText = 
+        'position: fixed;' +
+        'top: 20px;' +
+        'right: 20px;' +
+        'padding: 12px 20px;' +
+        'background: ' + (type === 'success' ? 'rgba(0, 255, 136, 0.9)' : 'rgba(255, 42, 109, 0.9)') + ';' +
+        'color: white;' +
+        'border-radius: 8px;' +
+        'font-weight: 600;' +
+        'z-index: 10000;' +
+        'animation: slideIn 0.3s ease-out, slideOut 0.3s ease-in 2.7s;' +
+        'box-shadow: 0 0 20px ' + (type === 'success' ? 'rgba(0, 255, 136, 0.5)' : 'rgba(255, 42, 109, 0.5)') + ';' +
+        'border: 1px solid ' + (type === 'success' ? '#00ff88' : '#ff2a6d') + ';';
       toast.textContent = message;
       document.body.appendChild(toast);
       
@@ -1303,11 +1302,13 @@ app.get("/", (req, res) => {
       if (emptyLogs) emptyLogs.remove();
       
       const logItem = document.createElement('div');
-      logItem.className = \`log-item \${log.type} terminal-line\`;
+      logItem.className = 'log-item ' + log.type + ' terminal-line';
       
       // Format time for cyberpunk style
       const now = new Date();
-      const timeStr = \`\${now.getHours().toString().padStart(2, '0')}:\${now.getMinutes().toString().padStart(2, '0')}:\${now.getSeconds().toString().padStart(2, '0')}\`;
+      const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                     now.getMinutes().toString().padStart(2, '0') + ':' + 
+                     now.getSeconds().toString().padStart(2, '0');
       
       let message = log.message;
       // Add emoji prefix based on type
@@ -1319,10 +1320,9 @@ app.get("/", (req, res) => {
         message = '🔵 ' + message;
       }
       
-      logItem.innerHTML = \`
-        <div class="log-time">[\${timeStr}]</div>
-        <div class="log-message">\${message}</div>
-      \`;
+      logItem.innerHTML = 
+        '<div class="log-time">[' + timeStr + ']</div>' +
+        '<div class="log-message">' + message + '</div>';
       
       // Insert at the TOP of log content
       if (logContent.firstChild) {
@@ -1352,31 +1352,33 @@ app.get("/", (req, res) => {
       const urls = currentUrlTab === 'success' ? successUrls : failedUrls;
       
       if (urls.length === 0) {
-        urlList.innerHTML = \`
-          <div class="empty-state">
-            <i>\${currentUrlTab === 'success' ? '🟢' : '🔴'}</i>
-            <div>\${currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS'}</div>
-            <div style="font-size: 12px; margin-top: 8px;">\${currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL'}</div>
-          </div>
-        \`;
+        urlList.innerHTML = 
+          '<div class="empty-state">' +
+            '<i>' + (currentUrlTab === 'success' ? '🟢' : '🔴') + '</i>' +
+            '<div>' + (currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS') + '</div>' +
+            '<div style="font-size: 12px; margin-top: 8px;">' + 
+              (currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL') + 
+            '</div>' +
+          '</div>';
         return;
       }
       
-      urlList.innerHTML = urls.map((url, index) => \`
-        <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
-          <div class="url-text">\${url.url}</div>
-          <div class="url-meta">
-            <div class="url-status">
-              <span>HITS: \${url.count}</span>
-              <span>STATUS: \${currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
-            </div>
-            <button class="copy-btn" onclick="copyUrl('\${url.url}', this)">
-              <i>📋</i>
-              COPY URL
-            </button>
-          </div>
-        </div>
-      \`).join('');
+      urlList.innerHTML = urls.map((url, index) => {
+        const escapedUrl = url.url.replace(/'/g, "\\'");
+        return '<div class="url-item ' + (currentUrlTab === 'success' ? 'success' : 'failed') + '">' +
+          '<div class="url-text">' + url.url + '</div>' +
+          '<div class="url-meta">' +
+            '<div class="url-status">' +
+              '<span>HITS: ' + url.count + '</span>' +
+              '<span>STATUS: ' + (currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE') + '</span>' +
+            '</div>' +
+            '<button class="copy-btn" onclick="copyUrl(\\'' + escapedUrl + '\\', this)">' +
+              '<i>📋</i>' +
+              'COPY URL' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
     }
 
     // Copy URL function
@@ -1414,13 +1416,12 @@ app.get("/", (req, res) => {
     // Clear logs
     function clearLogs() {
       logs = [];
-      logContent.innerHTML = \`
-        <div class="empty-state" id="empty-logs">
-          <i>📡</i>
-          <div>LOG PURGE COMPLETE</div>
-          <div style="font-size: 12px; margin-top: 8px;">AWAITING NEW CONNECTION DATA</div>
-        </div>
-      \`;
+      logContent.innerHTML = 
+        '<div class="empty-state" id="empty-logs">' +
+          '<i>📡</i>' +
+          '<div>LOG PURGE COMPLETE</div>' +
+          '<div style="font-size: 12px; margin-top: 8px;">AWAITING NEW CONNECTION DATA</div>' +
+        '</div>';
       
       // Add system log
       addLog({
@@ -1510,28 +1511,27 @@ app.get("/", (req, res) => {
     
     // Add CSS for toast animation
     const style = document.createElement('style');
-    style.textContent = \`
-      @keyframes slideIn {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      @keyframes slideOut {
-        from {
-          transform: translateX(0);
-          opacity: 1;
-        }
-        to {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-      }
-    \`;
+    style.textContent = 
+      '@keyframes slideIn {' +
+        'from {' +
+          'transform: translateX(100%);' +
+          'opacity: 0;' +
+        '}' +
+        'to {' +
+          'transform: translateX(0);' +
+          'opacity: 1;' +
+        '}' +
+      '}' +
+      '@keyframes slideOut {' +
+        'from {' +
+          'transform: translateX(0);' +
+          'opacity: 1;' +
+        '}' +
+        'to {' +
+          'transform: translateX(100%);' +
+          'opacity: 0;' +
+        '}' +
+      '}';
     document.head.appendChild(style);
     
     // Load initial data
