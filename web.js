@@ -13,13 +13,16 @@ const CORS_PROXY =
 
 // ======================== LOG MEMORY ===========================
 let LOGS = [];
+const clients = [];
+
 function pushLog(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
   console.log(line);
+
   LOGS.unshift(line);
   if (LOGS.length > 5000) LOGS = LOGS.slice(0, 5000);
 
-  // broadcast ke semua client SSE
+  // broadcast realtime ke dashboard
   for (const client of clients) {
     client.res.write(`data: ${line}\n\n`);
   }
@@ -78,7 +81,7 @@ const fetchText = async (url) => {
 
 const buildProxyUrl = (u) => `${CORS_PROXY}/${u}`;
 
-// ======================== HIT URL ===========================
+// ======================== HIT URL (Realtime Log) ===========================
 async function hitUrl(url) {
   const direct = await fetchText(url);
   const directOk = direct.ok && !isCaptcha(direct.text) && isJson(direct.text);
@@ -99,17 +102,19 @@ async function hitUrl(url) {
   }
 }
 
-// ======================== WORKER ===========================
+// ======================== WORKER NON-BLOCKING ===========================
 async function mainLoop() {
   const WORKERS = 20;
+  const MAX_PARALLEL = 4; // tiap worker menjalankan 4 URL bersamaan
 
   while (true) {
     try {
+      // Ambil list
       const listResp = await fetchText(SOURCE_URL);
       const urls = listResp.ok ? parseList(listResp.text) : [];
 
       if (urls.length === 0) {
-        pushLog("❌ SOURCE kosong → ulangi loop…");
+        pushLog("❌ SOURCE kosong → ulangi loop...");
         continue;
       }
 
@@ -119,12 +124,25 @@ async function mainLoop() {
 
       async function worker() {
         while (true) {
-          let u = urls[current++];
-          if (!u) break;
-          await hitUrl(u);
+          const batch = [];
+
+          for (let i = 0; i < MAX_PARALLEL; i++) {
+            let u = urls[current++];
+            if (!u) break;
+            batch.push(hitUrl(u)); // TIDAK menunggu → realtime log
+          }
+
+          if (batch.length === 0) break;
+
+          // Menunggu salah satu selesai (bukan semuanya)
+          await Promise.race(batch);
+
+          // delay mikro agar CPU tidak 100%
+          await new Promise((r) => setTimeout(r, 5));
         }
       }
 
+      // jalankan worker
       const pool = [];
       for (let i = 0; i < WORKERS; i++) pool.push(worker());
 
@@ -147,14 +165,10 @@ app.get("/", (req, res) => {
       body { font-family: Arial; background: #111; color:#eee; padding:20px; }
       h1 { color:#4de34d; }
       pre {
-        white-space: pre-wrap;
-        background:#000;
-        padding:20px;
-        border-radius:8px;
-        height:85vh;
-        overflow-y:scroll;
-        font-size:14px;
-        line-height:1.4;
+        white-space: pre-wrap; background:#000;
+        padding:20px; border-radius:8px;
+        height:85vh; overflow-y:scroll;
+        font-size:14px; line-height:1.4;
       }
     </style>
   </head>
@@ -171,15 +185,12 @@ app.get("/", (req, res) => {
         logBox.textContent = e.data + "\\n" + logBox.textContent;
       };
     </script>
-
   </body>
   </html>
   `);
 });
 
 // ======================== SSE STREAM ===========================
-const clients = [];
-
 app.get("/stream", (req, res) => {
   res.set({
     "Content-Type": "text/event-stream",
@@ -188,7 +199,6 @@ app.get("/stream", (req, res) => {
   });
 
   res.flushHeaders();
-
   res.write(": connected\n\n");
 
   const client = { res };
@@ -199,9 +209,9 @@ app.get("/stream", (req, res) => {
   });
 });
 
+// ======================== START ===========================
 app.listen(process.env.PORT || 3000, () =>
   pushLog("🌐 Dashboard SSE aktif di port 3000")
 );
 
-// ======================== START ENGINE ===========================
 mainLoop();
