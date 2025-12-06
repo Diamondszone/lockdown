@@ -214,200 +214,84 @@ app.get("/", (req, res) => {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Lockdown Cyber Control</title>
+  <title>JSON Checker Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: 'Orbitron', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     body {
-      background: #0a0a14;
+      background: #0f172a;
       color: #f8fafc;
       min-height: 100vh;
       overflow-x: hidden;
-      position: relative;
-    }
-
-    /* Chinese Characters Background Effect */
-    body::before {
-      content: "锁 封 控 网 安 全 系 统 监 视 攻 防 加 密 解 密 验 证 扫 描 入 侵 防 护 检 测 威 胁 病 毒 防 火 墙 攻 击 防 御 入 侵 检 测 恶 意 软 件 漏 洞 黑 客 安 全 协 议 数 据 保 护 网 络 安 全 信 息 安 全 系 统 安 全 应 用 程 序 网 络 攻 击 网 络 防 御";
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      font-size: 18px;
-      color: rgba(168, 85, 247, 0.03);
-      line-height: 1.8;
-      word-break: break-all;
-      z-index: 0;
-      animation: floatBackground 150s linear infinite;
-      text-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
-      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
-      font-weight: 900;
-      letter-spacing: 15px;
-      padding: 40px;
-      opacity: 0.3;
-    }
-
-    @keyframes floatBackground {
-      0% { transform: translateY(0) translateX(0); }
-      100% { transform: translateY(-1500px) translateX(-300px); }
-    }
-
-    /* Matrix Rain Effect */
-    #matrix-rain {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 0;
-      overflow: hidden;
-    }
-
-    .rain-column {
-      position: absolute;
-      top: -100px;
-      animation: rainFall linear infinite;
-      color: rgba(168, 85, 247, 0.7);
-      font-size: 18px;
-      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
-      font-weight: 900;
-      text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
-      white-space: nowrap;
-    }
-
-    @keyframes rainFall {
-      0% {
-        transform: translateY(-100px);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(100vh);
-        opacity: 0;
-      }
     }
 
     .container {
       max-width: 1400px;
       margin: 0 auto;
       padding: 20px;
-      position: relative;
-      z-index: 1;
     }
 
     /* Header */
     header {
-      background: rgba(10, 10, 20, 0.85);
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
       border-radius: 16px;
       padding: 24px 32px;
       margin-bottom: 24px;
-      border: 1px solid #a855f7;
-      box-shadow: 
-        0 0 30px rgba(168, 85, 247, 0.3),
-        0 8px 32px rgba(0, 0, 0, 0.6),
-        inset 0 0 20px rgba(168, 85, 247, 0.1);
-      position: relative;
-      overflow: hidden;
-      backdrop-filter: blur(10px);
-    }
-
-    header::before {
-      content: '';
-      position: absolute;
-      top: -2px;
-      left: -2px;
-      right: -2px;
-      bottom: -2px;
-      background: linear-gradient(45deg, 
-        #a855f7, #ec4899, #8b5cf6, #a855f7);
-      z-index: -1;
-      border-radius: 18px;
-      animation: borderGlow 3s linear infinite;
-    }
-
-    @keyframes borderGlow {
-      0%, 100% { filter: hue-rotate(0deg); }
-      50% { filter: hue-rotate(180deg); }
+      border: 1px solid #334155;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 
     .header-title {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 16px;
       margin-bottom: 12px;
     }
 
     .header-title h1 {
-      font-size: 42px;
-      font-weight: 900;
-      background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #8b5cf6 100%);
+      font-size: 32px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      letter-spacing: 2px;
-      text-shadow: 
-        0 0 20px rgba(168, 85, 247, 0.5),
-        0 0 40px rgba(168, 85, 247, 0.3);
-      animation: textGlow 2s ease-in-out infinite alternate;
-    }
-
-    @keyframes textGlow {
-      from { text-shadow: 0 0 20px rgba(168, 85, 247, 0.5), 0 0 40px rgba(168, 85, 247, 0.3); }
-      to { text-shadow: 0 0 30px rgba(168, 85, 247, 0.8), 0 0 60px rgba(168, 85, 247, 0.5), 0 0 80px rgba(168, 85, 247, 0.3); }
+      letter-spacing: -0.5px;
     }
 
     .header-title i {
-      font-size: 48px;
-      color: #a855f7;
-      filter: drop-shadow(0 0 15px rgba(168, 85, 247, 0.7));
-      animation: skullFloat 3s ease-in-out infinite;
-    }
-
-    @keyframes skullFloat {
-      0%, 100% { transform: translateY(0) rotate(0deg); }
-      50% { transform: translateY(-10px) rotate(5deg); }
+      font-size: 36px;
+      color: #60a5fa;
+      filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.5));
     }
 
     .header-subtitle {
-      color: #c4b5fd;
-      font-size: 16px;
+      color: #94a3b8;
+      font-size: 15px;
       margin-bottom: 32px;
-      text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
-      letter-spacing: 1px;
     }
 
     /* Stats Grid */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 24px;
+      gap: 20px;
       margin-bottom: 32px;
     }
 
     .stat-card {
-      background: rgba(20, 15, 35, 0.9);
+      background: rgba(30, 41, 59, 0.8);
       border-radius: 14px;
       padding: 24px;
-      border: 1px solid #a855f7;
+      border: 1px solid #334155;
       backdrop-filter: blur(10px);
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
       overflow: hidden;
-      box-shadow: 
-        0 0 20px rgba(168, 85, 247, 0.2),
-        inset 0 0 20px rgba(168, 85, 247, 0.05);
     }
 
     .stat-card::before {
@@ -417,89 +301,40 @@ app.get("/", (req, res) => {
       left: 0;
       right: 0;
       height: 3px;
-      background: linear-gradient(90deg, #a855f7, #ec4899, #8b5cf6);
-      animation: gradientMove 2s linear infinite;
-    }
-
-    @keyframes gradientMove {
-      0% { background-position: 0% 50%; }
-      100% { background-position: 200% 50%; }
+      background: linear-gradient(90deg, #60a5fa, #a78bfa);
     }
 
     .stat-card:hover {
-      transform: translateY(-8px) scale(1.02);
-      border-color: #ec4899;
-      box-shadow: 
-        0 0 40px rgba(168, 85, 247, 0.4),
-        0 15px 30px rgba(0, 0, 0, 0.4),
-        inset 0 0 30px rgba(168, 85, 247, 0.1);
+      transform: translateY(-5px);
+      border-color: #60a5fa;
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
     }
 
     .stat-label {
       font-size: 13px;
-      color: #c4b5fd;
+      color: #94a3b8;
       text-transform: uppercase;
-      letter-spacing: 1.5px;
+      letter-spacing: 1.2px;
       margin-bottom: 12px;
       font-weight: 600;
-      text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
     }
 
     .stat-value {
-      font-size: 46px;
+      font-size: 42px;
       font-weight: 900;
       margin-bottom: 8px;
-      text-shadow: 
-        0 0 20px currentColor,
-        0 0 40px rgba(168, 85, 247, 0.3);
-      font-family: 'Orbitron', monospace;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     }
 
-    .stat-success { 
-      color: #00ff88;
-      animation: successPulse 2s infinite;
-    }
-
-    @keyframes successPulse {
-      0%, 100% { text-shadow: 0 0 20px #00ff88, 0 0 40px rgba(0, 255, 136, 0.3); }
-      50% { text-shadow: 0 0 30px #00ff88, 0 0 60px rgba(0, 255, 136, 0.5), 0 0 80px rgba(0, 255, 136, 0.3); }
-    }
-
-    .stat-failed { 
-      color: #ff2a6d;
-      animation: failedPulse 2s infinite;
-    }
-
-    @keyframes failedPulse {
-      0%, 100% { text-shadow: 0 0 20px #ff2a6d, 0 0 40px rgba(255, 42, 109, 0.3); }
-      50% { text-shadow: 0 0 30px #ff2a6d, 0 0 60px rgba(255, 42, 109, 0.5), 0 0 80px rgba(255, 42, 109, 0.3); }
-    }
-
-    .stat-total { 
-      color: #a855f7;
-      animation: totalPulse 3s infinite;
-    }
-
-    @keyframes totalPulse {
-      0%, 100% { text-shadow: 0 0 20px #a855f7, 0 0 40px rgba(168, 85, 247, 0.3); }
-      50% { text-shadow: 0 0 30px #a855f7, 0 0 60px rgba(168, 85, 247, 0.5), 0 0 80px rgba(168, 85, 247, 0.3); }
-    }
-
-    .stat-unique { 
-      color: #8b5cf6;
-      animation: uniquePulse 2.5s infinite;
-    }
-
-    @keyframes uniquePulse {
-      0%, 100% { text-shadow: 0 0 20px #8b5cf6, 0 0 40px rgba(139, 92, 246, 0.3); }
-      50% { text-shadow: 0 0 30px #8b5cf6, 0 0 60px rgba(139, 92, 246, 0.5), 0 0 80px rgba(139, 92, 246, 0.3); }
-    }
+    .stat-success { color: #34d399; }
+    .stat-failed { color: #f87171; }
+    .stat-total { color: #60a5fa; }
+    .stat-unique { color: #a78bfa; }
 
     .stat-detail {
       font-size: 13px;
-      color: #a78bfa;
+      color: #64748b;
       font-weight: 500;
-      text-shadow: 0 0 5px rgba(168, 85, 247, 0.2);
     }
 
     /* Main Content */
@@ -520,75 +355,32 @@ app.get("/", (req, res) => {
 
     /* Panel */
     .panel {
-      background: rgba(20, 15, 35, 0.9);
+      background: rgba(30, 41, 59, 0.8);
       border-radius: 16px;
-      border: 1px solid #a855f7;
+      border: 1px solid #334155;
       backdrop-filter: blur(10px);
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      box-shadow: 
-        0 0 30px rgba(168, 85, 247, 0.2),
-        inset 0 0 20px rgba(168, 85, 247, 0.05);
-      position: relative;
-    }
-
-    .panel::before {
-      content: '';
-      position: absolute;
-      top: -2px;
-      left: -2px;
-      right: -2px;
-      bottom: -2px;
-      background: linear-gradient(45deg, #a855f7, #8b5cf6, #ec4899, #a855f7);
-      z-index: -1;
-      border-radius: 18px;
-      opacity: 0.5;
-      filter: blur(5px);
-      animation: panelGlow 4s linear infinite;
-    }
-
-    @keyframes panelGlow {
-      0% { opacity: 0.3; }
-      50% { opacity: 0.6; }
-      100% { opacity: 0.3; }
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
 
     .panel-header {
       padding: 20px 24px;
-      background: rgba(30, 25, 50, 0.9);
-      border-bottom: 1px solid #a855f7;
+      background: rgba(15, 23, 42, 0.9);
+      border-bottom: 1px solid #334155;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      position: relative;
-    }
-
-    .panel-header::after {
-      content: '';
-      position: absolute;
-      bottom: -1px;
-      left: 0;
-      width: 100%;
-      height: 1px;
-      background: linear-gradient(90deg, 
-        transparent, #a855f7, #ec4899, #8b5cf6, transparent);
-      animation: scanLine 3s linear infinite;
-    }
-
-    @keyframes scanLine {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
     }
 
     .panel-title {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 700;
       color: #e2e8f0;
       display: flex;
       align-items: center;
       gap: 12px;
-      text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
     }
 
     .panel-actions {
@@ -599,8 +391,8 @@ app.get("/", (req, res) => {
     .btn {
       padding: 10px 20px;
       border-radius: 10px;
-      border: 1px solid #a855f7;
-      background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(139, 92, 246, 0.1));
+      border: 1px solid #475569;
+      background: linear-gradient(135deg, #334155, #1e293b);
       color: #e2e8f0;
       cursor: pointer;
       font-size: 14px;
@@ -609,31 +401,12 @@ app.get("/", (req, res) => {
       display: flex;
       align-items: center;
       gap: 8px;
-      text-shadow: 0 0 5px rgba(168, 85, 247, 0.3);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .btn::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.3), transparent);
-      transition: 0.5s;
     }
 
     .btn:hover {
-      background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(139, 92, 246, 0.2));
-      border-color: #ec4899;
+      background: linear-gradient(135deg, #475569, #334155);
+      border-color: #64748b;
       transform: scale(1.05);
-      box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
-    }
-
-    .btn:hover::before {
-      left: 100%;
     }
 
     .btn:active {
@@ -641,15 +414,14 @@ app.get("/", (req, res) => {
     }
 
     .btn-clear {
-      background: linear-gradient(135deg, rgba(255, 42, 109, 0.2), rgba(220, 38, 38, 0.1));
-      border-color: #ff2a6d;
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      border-color: #ef4444;
       color: white;
     }
 
     .btn-clear:hover {
-      background: linear-gradient(135deg, rgba(255, 42, 109, 0.3), rgba(220, 38, 38, 0.2));
-      border-color: #ff6b9d;
-      box-shadow: 0 0 20px rgba(255, 42, 109, 0.4);
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      border-color: #f87171;
     }
 
     /* Log Panel */
@@ -663,22 +435,19 @@ app.get("/", (req, res) => {
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      background: rgba(10, 10, 20, 0.5);
     }
 
     .log-item {
       padding: 16px 20px;
-      border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
       font-size: 14px;
       line-height: 1.5;
       animation: fadeIn 0.5s ease-out;
       transition: all 0.2s ease;
-      position: relative;
     }
 
     .log-item:hover {
-      background: rgba(168, 85, 247, 0.1);
-      border-left: 4px solid #a855f7;
+      background: rgba(30, 41, 59, 0.5);
     }
 
     @keyframes fadeIn {
@@ -693,43 +462,31 @@ app.get("/", (req, res) => {
     }
 
     .log-item.info {
-      border-left: 4px solid #a855f7;
-      background: rgba(168, 85, 247, 0.05);
+      border-left: 4px solid #60a5fa;
+      background: rgba(96, 165, 250, 0.05);
     }
 
     .log-item.success {
-      border-left: 4px solid #00ff88;
-      background: rgba(0, 255, 136, 0.05);
-    }
-
-    .log-item.success .log-time {
-      color: #00ff88;
-      text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+      border-left: 4px solid #34d399;
+      background: rgba(52, 211, 153, 0.05);
     }
 
     .log-item.error {
-      border-left: 4px solid #ff2a6d;
-      background: rgba(255, 42, 109, 0.05);
-    }
-
-    .log-item.error .log-time {
-      color: #ff2a6d;
-      text-shadow: 0 0 5px rgba(255, 42, 109, 0.3);
+      border-left: 4px solid #f87171;
+      background: rgba(248, 113, 113, 0.05);
     }
 
     .log-time {
       font-size: 12px;
-      color: #c4b5fd;
+      color: #94a3b8;
       margin-bottom: 4px;
       font-family: 'Courier New', monospace;
       font-weight: 500;
-      letter-spacing: 1px;
     }
 
     .log-message {
       word-break: break-all;
       color: #f1f5f9;
-      font-family: 'Courier New', monospace;
     }
 
     /* URL Panel */
@@ -739,8 +496,8 @@ app.get("/", (req, res) => {
 
     .url-tabs {
       display: flex;
-      background: rgba(30, 25, 50, 0.9);
-      border-bottom: 1px solid #a855f7;
+      background: rgba(15, 23, 42, 0.9);
+      border-bottom: 1px solid #334155;
     }
 
     .url-tab {
@@ -750,50 +507,40 @@ app.get("/", (req, res) => {
       cursor: pointer;
       font-size: 15px;
       font-weight: 600;
-      color: #c4b5fd;
+      color: #94a3b8;
       transition: all 0.2s ease;
       border-bottom: 3px solid transparent;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      position: relative;
     }
 
     .url-tab:hover {
-      background: rgba(168, 85, 247, 0.2);
+      background: rgba(30, 41, 59, 0.5);
       color: #e2e8f0;
     }
 
     .url-tab.active {
-      color: #a855f7;
-      border-bottom-color: #a855f7;
-      background: rgba(168, 85, 247, 0.15);
-      text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+      color: #60a5fa;
+      border-bottom-color: #60a5fa;
+      background: rgba(30, 41, 59, 0.8);
     }
 
     .badge {
-      background: linear-gradient(135deg, #a855f7, #8b5cf6);
-      color: white;
+      background: #475569;
+      color: #f8fafc;
       padding: 4px 10px;
       border-radius: 20px;
       font-size: 13px;
       font-weight: 700;
       min-width: 28px;
-      box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
-      animation: badgePulse 2s infinite;
-    }
-
-    @keyframes badgePulse {
-      0%, 100% { box-shadow: 0 0 10px rgba(168, 85, 247, 0.5); }
-      50% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.8); }
     }
 
     .url-content {
       flex: 1;
       padding: 0;
       overflow-y: auto;
-      background: rgba(10, 10, 20, 0.5);
     }
 
     .url-list {
@@ -803,95 +550,39 @@ app.get("/", (req, res) => {
 
     .url-item {
       padding: 16px 20px;
-      border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
       font-size: 13px;
       line-height: 1.5;
       transition: all 0.2s ease;
-      position: relative;
-      display: flex;
-      flex-direction: column;
     }
 
     .url-item:hover {
-      background: rgba(168, 85, 247, 0.1);
+      background: rgba(30, 41, 59, 0.5);
     }
 
     .url-item.success {
-      border-left: 4px solid #00ff88;
-      background: rgba(0, 255, 136, 0.05);
-    }
-
-    .url-item.success .url-text {
-      color: #00ff88;
-      text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+      border-left: 4px solid #34d399;
+      background: rgba(52, 211, 153, 0.05);
     }
 
     .url-item.failed {
-      border-left: 4px solid #ff2a6d;
-      background: rgba(255, 42, 109, 0.05);
-    }
-
-    .url-item.failed .url-text {
-      color: #ff2a6d;
-      text-shadow: 0 0 5px rgba(255, 42, 109, 0.3);
+      border-left: 4px solid #f87171;
+      background: rgba(248, 113, 113, 0.05);
     }
 
     .url-text {
       word-break: break-all;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       color: #f1f5f9;
       font-weight: 500;
-      font-family: 'Courier New', monospace;
-      padding-right: 40px;
-    }
-
-    .url-actions {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 8px;
     }
 
     .url-meta {
       font-size: 12px;
-      color: #a78bfa;
+      color: #94a3b8;
       display: flex;
-      gap: 15px;
+      justify-content: space-between;
       font-weight: 500;
-      text-shadow: 0 0 5px rgba(168, 85, 247, 0.2);
-    }
-
-    .copy-btn {
-      background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(139, 92, 246, 0.2));
-      border: 1px solid #a855f7;
-      color: #e2e8f0;
-      padding: 4px 12px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      text-shadow: 0 0 5px rgba(168, 85, 247, 0.3);
-    }
-
-    .copy-btn:hover {
-      background: linear-gradient(135deg, rgba(168, 85, 247, 0.5), rgba(139, 92, 246, 0.3));
-      transform: scale(1.05);
-      box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
-    }
-
-    .copy-btn.copied {
-      background: linear-gradient(135deg, rgba(0, 255, 136, 0.3), rgba(0, 200, 100, 0.2));
-      border-color: #00ff88;
-      color: #00ff88;
-    }
-
-    .copy-btn.copied:hover {
-      background: linear-gradient(135deg, rgba(0, 255, 136, 0.5), rgba(0, 200, 100, 0.3));
-      box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
     }
 
     /* Scrollbar */
@@ -900,42 +591,37 @@ app.get("/", (req, res) => {
     }
 
     ::-webkit-scrollbar-track {
-      background: rgba(30, 25, 50, 0.5);
+      background: rgba(30, 41, 59, 0.5);
       border-radius: 5px;
     }
 
     ::-webkit-scrollbar-thumb {
-      background: linear-gradient(135deg, #a855f7, #8b5cf6);
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
       border-radius: 5px;
-      box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: linear-gradient(135deg, #8b5cf6, #a855f7);
-      box-shadow: 0 0 20px rgba(168, 85, 247, 0.7);
+      background: linear-gradient(135deg, #a78bfa, #60a5fa);
     }
 
     /* Footer */
     footer {
       text-align: center;
-      color: #a78bfa;
+      color: #64748b;
       font-size: 13px;
       padding: 20px;
-      border-top: 1px solid #a855f7;
+      border-top: 1px solid #334155;
       margin-top: 20px;
-      background: rgba(20, 15, 35, 0.8);
-      border-radius: 10px;
-      box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
     }
 
     .status-indicator {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      animation: statusPulse 1.5s infinite;
+      animation: pulse 2s infinite;
     }
 
-    @keyframes statusPulse {
+    @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
     }
@@ -944,105 +630,57 @@ app.get("/", (req, res) => {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: #00ff88;
-      box-shadow: 0 0 10px #00ff88;
-      animation: dotPulse 2s infinite;
-    }
-
-    @keyframes dotPulse {
-      0%, 100% { box-shadow: 0 0 10px #00ff88; }
-      50% { box-shadow: 0 0 20px #00ff88, 0 0 30px rgba(0, 255, 136, 0.5); }
+      background: #34d399;
     }
 
     /* Empty State */
     .empty-state {
       text-align: center;
       padding: 60px 20px;
-      color: #a78bfa;
+      color: #94a3b8;
     }
 
     .empty-state i {
       font-size: 48px;
       margin-bottom: 16px;
-      opacity: 0.7;
-      text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
-       }
-
-    /* Terminal Effect */
-    .terminal-line {
-      position: relative;
-      padding-left: 20px;
-    }
-
-    .terminal-line::before {
-      content: '>';
-      position: absolute;
-      left: 0;
-      color: #00ff88;
-      text-shadow: 0 0 10px #00ff88;
-      animation: blink 1s infinite;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0; }
-    }
-
-    /* Glitch Effect */
-    .glitch {
-      position: relative;
-      animation: glitch 5s infinite;
-    }
-
-    @keyframes glitch {
-      0% { transform: translate(0); }
-      2% { transform: translate(-2px, 2px); }
-      4% { transform: translate(-2px, -2px); }
-      6% { transform: translate(2px, 2px); }
-      8% { transform: translate(2px, -2px); }
-      10% { transform: translate(0); }
-      100% { transform: translate(0); }
+      opacity: 0.5;
     }
   </style>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Matrix Rain Effect -->
-  <div class="matrix-rain" id="matrix-rain"></div>
-
   <div class="container">
-    <header class="glitch">
+    <header>
       <div class="header-title">
-        <i>💀</i>
-        <h1>LOCKDOWN CONTROL</h1>
+        <i>⚡</i>
+        <h1>JSON Checker Dashboard</h1>
       </div>
       <div class="header-subtitle">
-        CYBER SECURITY MONITORING SYSTEM • REAL-TIME ENDPOINT VERIFICATION
+        Real-time monitoring of JSON endpoints with automatic proxy fallback
       </div>
       
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-label">TOTAL REQUESTS</div>
+          <div class="stat-label">Total Hits</div>
           <div class="stat-value stat-total" id="total-hits">0</div>
-          <div class="stat-detail">PROCESSED REQUESTS</div>
+          <div class="stat-detail">Total requests processed</div>
         </div>
         
         <div class="stat-card">
-          <div class="stat-label">SUCCESS RATE</div>
+          <div class="stat-label">Success Rate</div>
           <div class="stat-value stat-success" id="success-rate">0%</div>
-          <div class="stat-detail"><span id="success-count">0</span> VERIFIED ENDPOINTS</div>
+          <div class="stat-detail"><span id="success-count">0</span> successful hits</div>
         </div>
         
         <div class="stat-card">
-          <div class="stat-label">FAILURE RATE</div>
+          <div class="stat-label">Failure Rate</div>
           <div class="stat-value stat-failed" id="failure-rate">0%</div>
-          <div class="stat-detail"><span id="failed-count">0</span> FAILED ATTEMPTS</div>
+          <div class="stat-detail"><span id="failed-count">0</span> failed hits</div>
         </div>
         
         <div class="stat-card">
-          <div class="stat-label">ACTIVE TARGETS</div>
+          <div class="stat-label">Active URLs</div>
           <div class="stat-value stat-unique" id="unique-urls">0</div>
-          <div class="stat-detail"><span id="unique-success">0</span> ONLINE / <span id="unique-failed">0</span> OFFLINE</div>
+          <div class="stat-detail"><span id="unique-success">0</span> success / <span id="unique-failed">0</span> failed</div>
         </div>
       </div>
     </header>
@@ -1052,25 +690,25 @@ app.get("/", (req, res) => {
       <div class="panel log-panel">
         <div class="panel-header">
           <div class="panel-title">
-            <i>📡</i>
-            SYSTEM LOGS
+            <i>📋</i>
+            Real-time Logs
             <div class="status-indicator">
               <div class="status-dot"></div>
-              <span>SYNC ACTIVE</span>
+              <span>Live</span>
             </div>
           </div>
           <div class="panel-actions">
             <button class="btn btn-clear" onclick="clearLogs()">
               <i>🗑️</i>
-              PURGE LOGS
+              Clear Logs
             </button>
           </div>
         </div>
         <div class="log-content" id="log-content">
           <div class="empty-state" id="empty-logs">
-            <i>📡</i>
-            <div>INITIALIZING MONITORING SYSTEM...</div>
-            <div style="font-size: 12px; margin-top: 8px;">AWAITING CONNECTION DATA STREAM</div>
+            <i>📝</i>
+            <div>Waiting for logs...</div>
+            <div style="font-size: 12px; margin-top: 8px;">Logs will appear here in real-time</div>
           </div>
         </div>
       </div>
@@ -1079,24 +717,24 @@ app.get("/", (req, res) => {
       <div class="panel url-panel">
         <div class="panel-header">
           <div class="panel-title">
-            <i>🎯</i>
-            TARGET MONITOR
+            <i>🔗</i>
+            URL Status Monitor
           </div>
           <div class="panel-actions">
             <button class="btn" onclick="refreshStats()">
               <i>🔄</i>
-              FORCE SCAN
+              Refresh
             </button>
           </div>
         </div>
         
         <div class="url-tabs">
           <div class="url-tab active" onclick="switchUrlTab('success')">
-            <span>ACTIVE TARGETS</span>
+            <span>Success URLs</span>
             <span class="badge" id="success-badge">0</span>
           </div>
           <div class="url-tab" onclick="switchUrlTab('failed')">
-            <span>FAILED TARGETS</span>
+            <span>Failed URLs</span>
             <span class="badge" id="failed-badge">0</span>
           </div>
         </div>
@@ -1104,9 +742,9 @@ app.get("/", (req, res) => {
         <div class="url-content">
           <div class="url-list" id="url-list">
             <div class="empty-state">
-              <i>🎯</i>
-              <div>TARGET DATABASE EMPTY</div>
-              <div style="font-size: 12px; margin-top: 8px;">AWAITING TARGET ACQUISITION...</div>
+              <i>🔍</i>
+              <div>No URLs monitored yet</div>
+              <div style="font-size: 12px; margin-top: 8px;">URLs will appear here as they are checked</div>
             </div>
           </div>
         </div>
@@ -1117,11 +755,10 @@ app.get("/", (req, res) => {
       <p>
         <span class="status-indicator">
           <div class="status-dot"></div>
-          <span>SYSTEM STATUS: <strong>OPERATIONAL</strong></span>
+          <span>System Status: <strong>Active</strong></span>
         </span>
-        | LAST UPDATE: <span id="last-updated">--:--:--</span>
-        | SERVER TIME: <span id="server-time">--:--:--</span>
-        | <span style="color: #a855f7; text-shadow: 0 0 10px rgba(168,85,247,0.5);">LOCKDOWN PROTOCOL: ACTIVE</span>
+        | Last Updated: <span id="last-updated">-</span>
+        | Server Time: <span id="server-time">-</span>
       </p>
     </footer>
   </div>
@@ -1142,66 +779,7 @@ app.get("/", (req, res) => {
 
     const logContent = document.getElementById('log-content');
     const urlList = document.getElementById('url-list');
-    const matrixRain = document.getElementById('matrix-rain');
     const evt = new EventSource("/stream");
-
-    // Create Matrix Rain Effect
-    function createMatrixRain() {
-      const chineseChars = "锁封控网安全系统监视攻防加密解密验证扫描入侵防护检测威胁病毒防火墙攻击防御入侵检测恶意软件漏洞黑客安全协议数据保护网络安全信息安全系统安全应用程序网络攻击网络防御";
-      const chars = chineseChars.split('');
-      
-      // Create 30 rain columns
-      for (let i = 0; i < 30; i++) {
-        const column = document.createElement('div');
-        column.className = 'rain-column';
-        column.style.left = (i * 3.3) + '%';
-        column.style.animationDuration = (5 + Math.random() * 10) + 's';
-        column.style.animationDelay = (Math.random() * 5) + 's';
-        
-        // Add characters to column
-        let charString = '';
-        for (let j = 0; j < 20; j++) {
-          charString += chars[Math.floor(Math.random() * chars.length)] + '<br>';
-        }
-        column.innerHTML = charString;
-        
-        matrixRain.appendChild(column);
-      }
-    }
-
-    // Copy URL to clipboard
-    function copyToClipboard(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        // Show feedback
-        const buttons = document.querySelectorAll('.copy-btn');
-        buttons.forEach(btn => {
-          if (btn.getAttribute('data-url') === text) {
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i>✓</i> COPIED';
-            btn.classList.add('copied');
-            
-            setTimeout(() => {
-              btn.innerHTML = originalText;
-              btn.classList.remove('copied');
-            }, 2000);
-          }
-        });
-        
-        // Add log
-        addLog({
-          time: new Date().toLocaleTimeString(),
-          message: 'URL COPIED TO CLIPBOARD',
-          type: 'info'
-        });
-      }).catch(err => {
-        console.error('Failed to copy: ', err);
-        addLog({
-          time: new Date().toLocaleTimeString(),
-          message: 'FAILED TO COPY URL: ' + err,
-          type: 'error'
-        });
-      });
-    }
 
     // Update stats display
     function updateStats(data) {
@@ -1221,19 +799,7 @@ app.get("/", (req, res) => {
 
     // Update server time
     function updateServerTime() {
-      const now = new Date();
-      const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
-                     now.getMinutes().toString().padStart(2, '0') + ':' + 
-                     now.getSeconds().toString().padStart(2, '0');
-      document.getElementById('server-time').textContent = timeStr;
-      
-      // Add glitch effect randomly
-      if (Math.random() > 0.95) {
-        document.getElementById('server-time').classList.add('glitch');
-        setTimeout(() => {
-          document.getElementById('server-time').classList.remove('glitch');
-        }, 200);
-      }
+      document.getElementById('server-time').textContent = new Date().toLocaleTimeString();
     }
     setInterval(updateServerTime, 1000);
 
@@ -1244,26 +810,11 @@ app.get("/", (req, res) => {
       if (emptyLogs) emptyLogs.remove();
       
       const logItem = document.createElement('div');
-      logItem.className = 'log-item ' + log.type + ' terminal-line';
-      
-      // Format time for cyberpunk style
-      const now = new Date();
-      const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
-                     now.getMinutes().toString().padStart(2, '0') + ':' + 
-                     now.getSeconds().toString().padStart(2, '0');
-      
-      let message = log.message;
-      // Add emoji prefix based on type
-      if (log.type === 'success') {
-        message = '🟢 ' + message;
-      } else if (log.type === 'error') {
-        message = '🔴 ' + message;
-      } else {
-        message = '🔵 ' + message;
-      }
-      
-      logItem.innerHTML = '<div class="log-time">[' + timeStr + ']</div>' +
-                         '<div class="log-message">' + message + '</div>';
+      logItem.className = \`log-item \${log.type}\`;
+      logItem.innerHTML = \`
+        <div class="log-time">\${log.time}</div>
+        <div class="log-message">\${log.message}</div>
+      \`;
       
       // Insert at the TOP of log content
       if (logContent.firstChild) {
@@ -1293,31 +844,25 @@ app.get("/", (req, res) => {
       const urls = currentUrlTab === 'success' ? successUrls : failedUrls;
       
       if (urls.length === 0) {
-        urlList.innerHTML = '<div class="empty-state">' +
-          '<i>' + (currentUrlTab === 'success' ? '🟢' : '🔴') + '</i>' +
-          '<div>' + (currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS') + '</div>' +
-          '<div style="font-size: 12px; margin-top: 8px;">' + 
-            (currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL') + 
-          '</div>' +
-        '</div>';
+        urlList.innerHTML = \`
+          <div class="empty-state">
+            <i>\${currentUrlTab === 'success' ? '✅' : '❌'}</i>
+            <div>No \${currentUrlTab === 'success' ? 'successful' : 'failed'} URLs yet</div>
+            <div style="font-size: 12px; margin-top: 8px;">URLs will appear here as they are processed</div>
+          </div>
+        \`;
         return;
       }
       
-      urlList.innerHTML = urls.map(url => {
-        return '<div class="url-item ' + (currentUrlTab === 'success' ? 'success' : 'failed') + '">' +
-          '<div class="url-text">' + url.url + '</div>' +
-          '<div class="url-actions">' +
-            '<div class="url-meta">' +
-              '<span>HITS: ' + url.count + '</span>' +
-              '<span>STATUS: ' + (currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE') + '</span>' +
-            '</div>' +
-            '<button class="copy-btn" onclick="copyToClipboard(\'' + url.url.replace(/'/g, "\\'") + '\')" data-url="' + url.url + '">' +
-              '<i>📋</i>' +
-              'COPY URL' +
-            '</button>' +
-          '</div>' +
-        '</div>';
-      }).join('');
+      urlList.innerHTML = urls.map(url => \`
+        <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
+          <div class="url-text">\${url.url}</div>
+          <div class="url-meta">
+            <span>Hits: \${url.count}</span>
+            <span>Status: \${currentUrlTab === 'success' ? 'Success' : 'Failed'}</span>
+          </div>
+        </div>
+      \`).join('');
     }
 
     // Switch URL tab
@@ -1341,28 +886,17 @@ app.get("/", (req, res) => {
     // Clear logs
     function clearLogs() {
       logs = [];
-      logContent.innerHTML = '<div class="empty-state" id="empty-logs">' +
-        '<i>📡</i>' +
-        '<div>LOG PURGE COMPLETE</div>' +
-        '<div style="font-size: 12px; margin-top: 8px;">AWAITING NEW CONNECTION DATA</div>' +
-      '</div>';
-      
-      // Add system log
-      addLog({
-        time: new Date().toLocaleTimeString(),
-        message: 'SYSTEM: LOG PURGE INITIATED',
-        type: 'info'
-      });
+      logContent.innerHTML = \`
+        <div class="empty-state" id="empty-logs">
+          <i>📝</i>
+          <div>Logs cleared</div>
+          <div style="font-size: 12px; margin-top: 8px;">Waiting for new logs...</div>
+        </div>
+      \`;
     }
 
     // Refresh stats
     function refreshStats() {
-      addLog({
-        time: new Date().toLocaleTimeString(),
-        message: 'SYSTEM: FORCED SCAN INITIATED',
-        type: 'info'
-      });
-      
       fetch('/api/stats')
         .then(r => r.json())
         .then(data => {
@@ -1388,13 +922,6 @@ app.get("/", (req, res) => {
         
         if (data.type === 'stats') {
           updateStats(data.data);
-          // Add heartbeat pulse effect
-          document.querySelectorAll('.stat-card').forEach(card => {
-            card.style.animation = 'none';
-            setTimeout(() => {
-              card.style.animation = '';
-            }, 10);
-          });
           // Reload URL lists setiap kali stats diupdate
           loadUrlLists();
         } else {
@@ -1408,22 +935,12 @@ app.get("/", (req, res) => {
     evt.onerror = () => {
       addLog({
         time: new Date().toLocaleTimeString(),
-        message: '⚠️ CONNECTION LOST - ATTEMPTING RECONNECT...',
+        message: '⚠️ Connection lost, attempting to reconnect...',
         type: 'error'
       });
-      
-      // Add visual warning effect
-      document.querySelector('.status-dot').style.background = '#ff2a6d';
-      document.querySelector('.status-dot').style.boxShadow = '0 0 20px #ff2a6d';
-      
-      setTimeout(() => {
-        document.querySelector('.status-dot').style.background = '#00ff88';
-        document.querySelector('.status-dot').style.boxShadow = '0 0 10px #00ff88';
-      }, 2000);
     };
 
     // Initial setup
-    createMatrixRain();
     updateServerTime();
     
     // Load initial data
@@ -1431,64 +948,12 @@ app.get("/", (req, res) => {
       .then(r => r.json())
       .then(data => {
         updateStats(data);
-        // Add initial system message
-        addLog({
-          time: new Date().toLocaleTimeString(),
-          message: 'SYSTEM: LOCKDOWN CONTROL INITIALIZED',
-          type: 'info'
-        });
-        addLog({
-          time: new Date().toLocaleTimeString(),
-          message: 'SYSTEM: MATRIX RAIN PROTOCOL ACTIVE',
-          type: 'info'
-        });
-        addLog({
-          time: new Date().toLocaleTimeString(),
-          message: 'SYSTEM: MONITORING PROTOCOL ACTIVE',
-          type: 'info'
-        });
       });
     
     loadUrlLists();
     
     // Auto-refresh URL lists every 10 seconds
     setInterval(loadUrlLists, 10000);
-    
-    // Random system status updates
-    setInterval(() => {
-      if (Math.random() > 0.7) {
-        const messages = [
-          'SYSTEM: SCAN CYCLE COMPLETE',
-          'SYSTEM: ALL SYSTEMS NOMINAL',
-          'SYSTEM: PROXY NETWORK ACTIVE',
-          'SYSTEM: ENCRYPTION ACTIVE',
-          'SYSTEM: TARGET ACQUISITION RUNNING',
-          'SYSTEM: MATRIX PROTOCOL STABLE',
-          'SYSTEM: DATA STREAM SECURE',
-          'SYSTEM: COPY FUNCTION OPERATIONAL'
-        ];
-        addLog({
-          time: new Date().toLocaleTimeString(),
-          message: messages[Math.floor(Math.random() * messages.length)],
-          type: 'info'
-        });
-      }
-    }, 15000);
-
-    // Random matrix rain updates
-    setInterval(() => {
-      const columns = document.querySelectorAll('.rain-column');
-      columns.forEach(col => {
-        if (Math.random() > 0.8) {
-          col.style.color = 'rgba(' + 
-            Math.floor(Math.random() * 100 + 155) + ', ' + 
-            Math.floor(Math.random() * 50 + 85) + ', 247, 0.9)';
-          col.style.textShadow = '0 0 15px rgba(' + 
-            Math.floor(Math.random() * 100 + 155) + ', ' + 
-            Math.floor(Math.random() * 50 + 85) + ', 247, 0.7)';
-        }
-      });
-    }, 3000);
   </script>
 </body>
 </html>
@@ -1552,7 +1017,7 @@ app.get("/stream", (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  broadcastLog(`🌐 LOCKDOWN SYSTEM ACTIVATED ON PORT ${PORT}`, "info");
+  broadcastLog(`🌐 Dashboard started on port ${PORT}`, "info");
 });
 
 // Start main loop
