@@ -13,8 +13,8 @@ const CORS_PROXY =
 
 // ======================== DATA STRUCTURE ===========================
 const clients = [];
-const successUrls = new Map(); // url -> {count, lastSeen}
-const failedUrls = new Map();   // url -> {count, lastSeen}
+const successUrls = new Map(); // url -> count
+const failedUrls = new Map();   // url -> count
 let stats = {
   totalHits: 0,
   success: 0,
@@ -23,7 +23,7 @@ let stats = {
 };
 
 // ======================== BROADCAST SYSTEM ===========================
-function broadcastLog(msg, type = "info", url = "") {
+function broadcastLog(msg, type = "info") {
   const line = {
     id: Date.now(),
     time: new Date().toLocaleTimeString(),
@@ -52,21 +52,6 @@ function broadcastStats() {
   
   for (const client of clients) {
     client.res.write(`data: ${JSON.stringify(statData)}\n\n`);
-  }
-}
-
-function broadcastUrlUpdate(type, url) {
-  const urlData = {
-    type: "urlUpdate",
-    data: {
-      type: type, // "success" or "failed"
-      url: url,
-      time: new Date().toLocaleTimeString()
-    }
-  };
-  
-  for (const client of clients) {
-    client.res.write(`data: ${JSON.stringify(urlData)}\n\n`);
   }
 }
 
@@ -104,7 +89,7 @@ const fetchText = async (url) => {
   try {
     const resp = await axios.get(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 20000,
+      timeout: 15000, // Turun dari 20s ke 15s
       validateStatus: () => true,
       responseType: "text",
     });
@@ -133,14 +118,9 @@ async function hitUrl(url) {
 
   if (directOk) {
     stats.success++;
-    successUrls.set(url, {
-      count: (successUrls.get(url)?.count || 0) + 1,
-      lastSeen: new Date().toISOString()
-    });
+    successUrls.set(url, (successUrls.get(url) || 0) + 1);
     failedUrls.delete(url);
-    broadcastLog(`✅ Direct Success: ${url}`, "success", url);
-    broadcastUrlUpdate("success", url);
-    broadcastStats();
+    broadcastLog(`✅ ${url}`, "success");
     return { success: true, method: "direct", url };
   }
 
@@ -149,30 +129,20 @@ async function hitUrl(url) {
 
   if (proxyOk) {
     stats.success++;
-    successUrls.set(url, {
-      count: (successUrls.get(url)?.count || 0) + 1,
-      lastSeen: new Date().toISOString()
-    });
+    successUrls.set(url, (successUrls.get(url) || 0) + 1);
     failedUrls.delete(url);
-    broadcastLog(`✅ Proxy Success: ${url}`, "success", url);
-    broadcastUrlUpdate("success", url);
-    broadcastStats();
+    broadcastLog(`✅ ${url} (Proxy)`, "success");
     return { success: true, method: "proxy", url };
   } else {
     stats.failed++;
-    failedUrls.set(url, {
-      count: (failedUrls.get(url)?.count || 0) + 1,
-      lastSeen: new Date().toISOString()
-    });
+    failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
     successUrls.delete(url);
-    broadcastLog(`❌ Failed: ${url}`, "error", url);
-    broadcastUrlUpdate("failed", url);
-    broadcastStats();
+    broadcastLog(`❌ ${url}`, "error");
     return { success: false, url };
   }
 }
 
-// ======================== WORKER ===========================
+// ======================== WORKER NON-BLOCKING (SAMA DENGAN CODE LAMA) ===========================
 async function mainLoop() {
   const WORKERS = 20;
   const MAX_PARALLEL = 4;
@@ -184,47 +154,54 @@ async function mainLoop() {
       const urls = listResp.ok ? parseList(listResp.text) : [];
 
       if (urls.length === 0) {
-        broadcastLog("❌ SOURCE empty, retrying...", "error");
-        await new Promise(r => setTimeout(r, 5000));
+        broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
+        await new Promise(r => setTimeout(r, 3000));
         continue;
       }
 
-      broadcastLog(`📥 Loaded ${urls.length} URLs`, "info");
+      broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
+      
+      // Broadcast stats sebelum mulai
+      broadcastStats();
 
       let current = 0;
-      const processedUrls = new Set();
 
       async function worker() {
         while (true) {
           const batch = [];
 
           for (let i = 0; i < MAX_PARALLEL; i++) {
-            if (current >= urls.length) break;
             let u = urls[current++];
-            if (!u || processedUrls.has(u)) continue;
-            
-            processedUrls.add(u);
-            batch.push(hitUrl(u));
+            if (!u) break;
+            batch.push(hitUrl(u)); // TIDAK menunggu → realtime log
           }
 
           if (batch.length === 0) break;
 
+          // Menunggu salah satu selesai (bukan semuanya) - SAMA DENGAN CODE LAMA
           await Promise.race(batch);
+
+          // delay mikro agar CPU tidak 100%
           await new Promise((r) => setTimeout(r, 5));
         }
       }
 
+      // jalankan worker
       const pool = [];
       for (let i = 0; i < WORKERS; i++) pool.push(worker());
 
       await Promise.all(pool);
       
-      broadcastLog(`🔄 Loop completed, restarting...`, "info");
-      await new Promise(r => setTimeout(r, 1000));
+      broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
+      // Broadcast stats setelah selesai
+      broadcastStats();
+      
+      // Delay singkat sebelum loop berikutnya
+      await new Promise(r => setTimeout(r, 100));
       
     } catch (err) {
-      broadcastLog(`❌ ERROR: ${err.message}`, "error");
-      await new Promise(r => setTimeout(r, 10000));
+      broadcastLog("❌ ERROR LOOP: " + err.message, "error");
+      await new Promise(r => setTimeout(r, 5000));
     }
   }
 }
@@ -805,7 +782,8 @@ app.get("/", (req, res) => {
     const evt = new EventSource("/stream");
 
     // Update stats display
-    function updateStats() {
+    function updateStats(data) {
+      stats = data;
       document.getElementById('total-hits').textContent = stats.totalHits.toLocaleString();
       document.getElementById('success-count').textContent = stats.success.toLocaleString();
       document.getElementById('failed-count').textContent = stats.failed.toLocaleString();
@@ -881,7 +859,7 @@ app.get("/", (req, res) => {
           <div class="url-text">\${url.url}</div>
           <div class="url-meta">
             <span>Hits: \${url.count}</span>
-            <span>Last: \${url.time}</span>
+            <span>Status: \${currentUrlTab === 'success' ? 'Success' : 'Failed'}</span>
           </div>
         </div>
       \`).join('');
@@ -922,10 +900,12 @@ app.get("/", (req, res) => {
       fetch('/api/stats')
         .then(r => r.json())
         .then(data => {
-          stats = data;
-          updateStats();
+          updateStats(data);
         });
-      
+    }
+
+    // Load URL lists
+    function loadUrlLists() {
       fetch('/api/recent-urls')
         .then(r => r.json())
         .then(data => {
@@ -940,50 +920,12 @@ app.get("/", (req, res) => {
       try {
         const data = JSON.parse(e.data);
         
-        switch(data.type) {
-          case 'stats':
-            stats = data.data;
-            updateStats();
-            break;
-            
-          case 'urlUpdate':
-            // Add to appropriate list
-            const urlData = {
-              url: data.data.url,
-              time: data.data.time,
-              count: 1
-            };
-            
-            if (data.data.type === 'success') {
-              const existing = successUrls.find(u => u.url === data.data.url);
-              if (existing) {
-                existing.count++;
-                existing.time = data.data.time;
-              } else {
-                successUrls.unshift(urlData);
-                // Keep only 50 most recent
-                if (successUrls.length > 50) successUrls.pop();
-              }
-            } else {
-              const existing = failedUrls.find(u => u.url === data.data.url);
-              if (existing) {
-                existing.count++;
-                existing.time = data.data.time;
-              } else {
-                failedUrls.unshift(urlData);
-                // Keep only 50 most recent
-                if (failedUrls.length > 50) failedUrls.pop();
-              }
-            }
-            
-            if (currentUrlTab === data.data.type) {
-              updateUrlList();
-            }
-            break;
-            
-          default:
-            addLog(data);
-            break;
+        if (data.type === 'stats') {
+          updateStats(data.data);
+          // Reload URL lists setiap kali stats diupdate
+          loadUrlLists();
+        } else {
+          addLog(data);
         }
       } catch (err) {
         console.error('Error parsing SSE:', err);
@@ -999,19 +941,19 @@ app.get("/", (req, res) => {
     };
 
     // Initial setup
-    updateStats();
     updateServerTime();
     
     // Load initial data
-    fetch('/api/initial-data')
+    fetch('/api/stats')
       .then(r => r.json())
       .then(data => {
-        stats = data.stats;
-        successUrls = data.successUrls || [];
-        failedUrls = data.failedUrls || [];
-        updateStats();
-        updateUrlList();
+        updateStats(data);
       });
+    
+    loadUrlLists();
+    
+    // Auto-refresh URL lists every 10 seconds
+    setInterval(loadUrlLists, 10000);
   </script>
 </body>
 </html>
@@ -1030,53 +972,22 @@ app.get("/api/stats", (req, res) => {
 
 app.get("/api/recent-urls", (req, res) => {
   const successArray = Array.from(successUrls.entries())
-    .slice(0, 50)
-    .map(([url, data]) => ({
+    .slice(0, 100)
+    .map(([url, count]) => ({
       url,
-      count: data.count,
-      time: new Date(data.lastSeen).toLocaleTimeString()
+      count
     }));
   
   const failedArray = Array.from(failedUrls.entries())
-    .slice(0, 50)
-    .map(([url, data]) => ({
+    .slice(0, 100)
+    .map(([url, count]) => ({
       url,
-      count: data.count,
-      time: new Date(data.lastSeen).toLocaleTimeString()
+      count
     }));
   
   res.json({
     success: successArray,
     failed: failedArray
-  });
-});
-
-app.get("/api/initial-data", (req, res) => {
-  const successArray = Array.from(successUrls.entries())
-    .slice(0, 50)
-    .map(([url, data]) => ({
-      url,
-      count: data.count,
-      time: new Date(data.lastSeen).toLocaleTimeString()
-    }));
-  
-  const failedArray = Array.from(failedUrls.entries())
-    .slice(0, 50)
-    .map(([url, data]) => ({
-      url,
-      count: data.count,
-      time: new Date(data.lastSeen).toLocaleTimeString()
-    }));
-  
-  res.json({
-    stats: {
-      ...stats,
-      successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
-      uniqueSuccess: successUrls.size,
-      uniqueFailed: failedUrls.size
-    },
-    successUrls: successArray,
-    failedUrls: failedArray
   });
 });
 
@@ -1093,17 +1004,6 @@ app.get("/stream", (req, res) => {
 
   const client = { res };
   clients.push(client);
-
-  // Send initial stats
-  res.write(`data: ${JSON.stringify({
-    type: "stats",
-    data: {
-      ...stats,
-      successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
-      uniqueSuccess: successUrls.size,
-      uniqueFailed: failedUrls.size
-    }
-  })}\n\n`);
 
   req.on("close", () => {
     const index = clients.indexOf(client);
