@@ -232,31 +232,72 @@ app.get("/", (req, res) => {
       position: relative;
     }
 
-    /* Chinese Characters Background Effect */
-    body::before {
-      content: "锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 封 封 封 封 封 封 封 封 封 封 封 封 封 封 封 控 控 控 控 控 控 控 控 控 控 控 控 控 控 控 网 网 网 网 网 网 网 网 网 网 网 网 网 网 网 安 安 安 安 安 安 安 安 安 安 安 安 安 安 安 全 全 全 全 全 全 全 全 全 全 全 全 全 全 全 系 系 系 系 系 系 系 系 系 系 系 系 系 系 系 统 统 统 统 统 统 统 统 统 统 统 统 统 统 统 监 监 监 监 监 监 监 监 监 监 监 监 监 监 监 视 视 视 视 视 视 视 视 视 视 视 视 视 视 视";
+    /* Matrix Rain Effect dengan Karakter Mandarin */
+    .matrix-rain {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      font-size: 24px;
-      color: rgba(168, 85, 247, 0.05);
-      line-height: 1.8;
-      word-break: break-all;
-      z-index: -1;
-      animation: floatBackground 120s linear infinite;
-      text-shadow: 0 0 10px rgba(168, 85, 247, 0.1);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .rain-column {
+      position: absolute;
+      top: -100px;
+      animation: rainFall linear infinite;
+      color: rgba(168, 85, 247, 0.7);
+      font-size: 20px;
       font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
       font-weight: 900;
-      letter-spacing: 8px;
-      padding: 20px;
-      opacity: 0.4;
+      text-shadow: 
+        0 0 10px rgba(168, 85, 247, 0.5),
+        0 0 20px rgba(168, 85, 247, 0.3);
+    }
+
+    @keyframes rainFall {
+      0% {
+        transform: translateY(-100px);
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      90% {
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(100vh);
+        opacity: 0;
+      }
+    }
+
+    /* Chinese Characters Background Effect - Tetap ada */
+    body::before {
+      content: "锁封控网安全系统监视攻防加密解密验证扫描入侵防护检测威胁病毒防火墙攻击防御入侵检测恶意软件漏洞黑客安全协议数据保护网络安全信息安全系统安全应用程序网络攻击网络防御";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      font-size: 18px;
+      color: rgba(168, 85, 247, 0.03);
+      line-height: 1.8;
+      word-break: break-all;
+      z-index: 0;
+      animation: floatBackground 150s linear infinite;
+      text-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
+      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+      font-weight: 900;
+      letter-spacing: 15px;
+      padding: 40px;
+      opacity: 0.3;
     }
 
     @keyframes floatBackground {
       0% { transform: translateY(0) translateX(0); }
-      100% { transform: translateY(-1000px) translateX(-200px); }
+      100% { transform: translateY(-1500px) translateX(-300px); }
     }
 
     /* Glitch Effect */
@@ -783,6 +824,8 @@ app.get("/", (req, res) => {
       line-height: 1.5;
       transition: all 0.2s ease;
       position: relative;
+      display: flex;
+      flex-direction: column;
     }
 
     .url-item:hover {
@@ -811,19 +854,60 @@ app.get("/", (req, res) => {
 
     .url-text {
       word-break: break-all;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       color: #f1f5f9;
       font-weight: 500;
       font-family: 'Courier New', monospace;
+      padding-right: 40px;
+    }
+
+    .url-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
     }
 
     .url-meta {
       font-size: 12px;
       color: #a78bfa;
       display: flex;
-      justify-content: space-between;
+      gap: 15px;
       font-weight: 500;
       text-shadow: 0 0 5px rgba(168, 85, 247, 0.2);
+    }
+
+    .copy-btn {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(139, 92, 246, 0.2));
+      border: 1px solid #a855f7;
+      color: #e2e8f0;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      text-shadow: 0 0 5px rgba(168, 85, 247, 0.3);
+    }
+
+    .copy-btn:hover {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.5), rgba(139, 92, 246, 0.3));
+      transform: scale(1.05);
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+    }
+
+    .copy-btn.copied {
+      background: linear-gradient(135deg, rgba(0, 255, 136, 0.3), rgba(0, 200, 100, 0.2));
+      border-color: #00ff88;
+      color: #00ff88;
+    }
+
+    .copy-btn.copied:hover {
+      background: linear-gradient(135deg, rgba(0, 255, 136, 0.5), rgba(0, 200, 100, 0.3));
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
     }
 
     /* Scrollbar */
@@ -900,7 +984,7 @@ app.get("/", (req, res) => {
       text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
     }
 
-    /* Terminal Effect */
+        /* Terminal Effect */
     .terminal-line {
       position: relative;
       padding-left: 20px;
@@ -923,6 +1007,9 @@ app.get("/", (req, res) => {
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Matrix Rain Effect -->
+  <div class="matrix-rain" id="matrix-rain"></div>
+
   <div class="container">
     <header class="glitch">
       <div class="header-title">
@@ -950,7 +1037,7 @@ app.get("/", (req, res) => {
           <div class="stat-label">FAILURE RATE</div>
           <div class="stat-value stat-failed" id="failure-rate">0%</div>
           <div class="stat-detail"><span id="failed-count">0</span> FAILED ATTEMPTS</div>
-                </div>
+        </div>
         
         <div class="stat-card">
           <div class="stat-label">ACTIVE TARGETS</div>
@@ -1055,7 +1142,66 @@ app.get("/", (req, res) => {
 
     const logContent = document.getElementById('log-content');
     const urlList = document.getElementById('url-list');
+    const matrixRain = document.getElementById('matrix-rain');
     const evt = new EventSource("/stream");
+
+    // Create Matrix Rain Effect
+    function createMatrixRain() {
+      const chineseChars = "锁封控网安全系统监视攻防加密解密验证扫描入侵防护检测威胁病毒防火墙攻击防御入侵检测恶意软件漏洞黑客安全协议数据保护网络安全信息安全系统安全应用程序网络攻击网络防御";
+      const chars = chineseChars.split('');
+      
+      // Create 30 rain columns
+      for (let i = 0; i < 30; i++) {
+        const column = document.createElement('div');
+        column.className = 'rain-column';
+        column.style.left = `${(i * 3.3)}%`;
+        column.style.animationDuration = `${5 + Math.random() * 10}s`;
+        column.style.animationDelay = `${Math.random() * 5}s`;
+        
+        // Add characters to column
+        let charString = '';
+        for (let j = 0; j < 20; j++) {
+          charString += chars[Math.floor(Math.random() * chars.length)] + '<br>';
+        }
+        column.innerHTML = charString;
+        
+        matrixRain.appendChild(column);
+      }
+    }
+
+    // Copy URL to clipboard
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        // Show feedback
+        const buttons = document.querySelectorAll('.copy-btn');
+        buttons.forEach(btn => {
+          if (btn.getAttribute('data-url') === text) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i>✓</i> COPIED';
+            btn.classList.add('copied');
+            
+            setTimeout(() => {
+              btn.innerHTML = originalText;
+              btn.classList.remove('copied');
+            }, 2000);
+          }
+        });
+        
+        // Add log
+        addLog({
+          time: new Date().toLocaleTimeString(),
+          message: `URL COPIED TO CLIPBOARD`,
+          type: 'info'
+        });
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+        addLog({
+          time: new Date().toLocaleTimeString(),
+          message: `FAILED TO COPY URL: ${err}`,
+          type: 'error'
+        });
+      });
+    }
 
     // Update stats display
     function updateStats(data) {
@@ -1160,9 +1306,15 @@ app.get("/", (req, res) => {
       urlList.innerHTML = urls.map(url => \`
         <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
           <div class="url-text">\${url.url}</div>
-          <div class="url-meta">
-            <span>HITS: \${url.count}</span>
-            <span>STATUS: \${currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
+          <div class="url-actions">
+            <div class="url-meta">
+              <span>HITS: \${url.count}</span>
+              <span>STATUS: \${currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
+            </div>
+            <button class="copy-btn" onclick="copyToClipboard('\${url.url}')" data-url="\${url.url}">
+              <i>📋</i>
+              COPY URL
+            </button>
           </div>
         </div>
       \`).join('');
@@ -1273,6 +1425,7 @@ app.get("/", (req, res) => {
     };
 
     // Initial setup
+    createMatrixRain();
     updateServerTime();
     
     // Load initial data
@@ -1284,6 +1437,11 @@ app.get("/", (req, res) => {
         addLog({
           time: new Date().toLocaleTimeString(),
           message: 'SYSTEM: LOCKDOWN CONTROL INITIALIZED',
+          type: 'info'
+        });
+        addLog({
+          time: new Date().toLocaleTimeString(),
+          message: 'SYSTEM: MATRIX RAIN PROTOCOL ACTIVE',
           type: 'info'
         });
         addLog({
@@ -1306,7 +1464,10 @@ app.get("/", (req, res) => {
           'SYSTEM: ALL SYSTEMS NOMINAL',
           'SYSTEM: PROXY NETWORK ACTIVE',
           'SYSTEM: ENCRYPTION ACTIVE',
-          'SYSTEM: TARGET ACQUISITION RUNNING'
+          'SYSTEM: TARGET ACQUISITION RUNNING',
+          'SYSTEM: MATRIX PROTOCOL STABLE',
+          'SYSTEM: DATA STREAM SECURE',
+          'SYSTEM: COPY FUNCTION OPERATIONAL'
         ];
         addLog({
           time: new Date().toLocaleTimeString(),
@@ -1315,6 +1476,17 @@ app.get("/", (req, res) => {
         });
       }
     }, 15000);
+
+    // Random matrix rain updates
+    setInterval(() => {
+      const columns = document.querySelectorAll('.rain-column');
+      columns.forEach(col => {
+        if (Math.random() > 0.8) {
+          col.style.color = \`rgba(\${Math.floor(Math.random() * 100 + 155)}, \${Math.floor(Math.random() * 50 + 85)}, 247, 0.9)\`;
+          col.style.textShadow = \`0 0 15px rgba(\${Math.floor(Math.random() * 100 + 155)}, \${Math.floor(Math.random() * 50 + 85)}, 247, 0.7)\`;
+        }
+      });
+    }, 3000);
   </script>
 </body>
 </html>
