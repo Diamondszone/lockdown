@@ -9,7 +9,7 @@ const SOURCE_URL =
 
 const CORS_PROXY =
   process.env.CORS_PROXY ||
-  "https://cors-anywhere-vercel-dzone.vercel.app/";
+  "https://cors-anywhere-vercel-dzone.vercel.app";
 
 // ======================== DATA STRUCTURE ===========================
 const clients = [];
@@ -1873,4 +1873,5 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
+
 
