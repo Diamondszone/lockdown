@@ -200,7 +200,7 @@ app.get("/dashboard",(req,res)=>{
       const queueList=document.getElementById('queueList');
       queueList.innerHTML=list.map(item=>{
         const flashClass = item.flash ? (item.type==='ok' ? 'flash-ok' : item.type==='err' ? 'flash-err':'') : '';
-        return `<div class="${item.type} ${flashClass}">⚡ ${item.text}</div>`;
+       return `<div class="${item.type} ${flashClass}">\u26A1 ${item.text}</div>`;
       }).join('');
       queueList.scrollTop = queueList.scrollHeight;
     }
@@ -227,3 +227,4 @@ app.get("/status-log",(req,res)=>{
 const PORT = process.env.PORT || 3000;
 app.listen(PORT,()=>console.log("🌐 Web server OK on port",PORT));
 mainLoop();
+
