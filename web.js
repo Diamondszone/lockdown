@@ -1,4 +1,4 @@
-// server.js
+// web.js
 import express from "express";
 import axios from "axios";
 
@@ -70,6 +70,7 @@ async function hitUrl(url) {
 
   if (directOk) {
     console.log(`🔗 URL: ${url} | ✅ Direct OK | JSON`);
+    process.stdout.write("");
     return;
   }
 
@@ -82,48 +83,58 @@ async function hitUrl(url) {
   } else {
     console.log(`🔗 URL: ${url} | ❌ Direct & Proxy | BUKAN JSON`);
   }
+
+  process.stdout.write("");
 }
 
-// ────────────── PARALLEL WORKER ──────────────
-// Model worker queue sungguhan
-
+// ────────────── REALTIME PARALLEL WORKER QUEUE ──────────────
 async function mainLoop() {
-  const WORKERS = 20; // realtime parallel queue worker
+  const WORKERS = 20;
 
-  while (true) {
+  let queue = [];
+  let loading = false;
+
+  // Ambil list dari SOURCE secara periodik
+  async function refillQueue() {
+    if (loading) return;
+    loading = true;
+
     try {
-      // Ambil list terbaru
-      const listResp = await fetchText(SOURCE_URL);
-      const urls = listResp.ok ? parseList(listResp.text) : [];
+      const resp = await fetchText(SOURCE_URL);
+      const urls = resp.ok ? parseList(resp.text) : [];
 
-      if (urls.length === 0) {
-        console.log("❌ SOURCE kosong, ulangi…");
+      if (urls.length > 0) {
+        queue.push(...urls);
+        console.log(`📥 Queue bertambah: +${urls.length}`);
+        process.stdout.write("");
+      }
+    } catch (e) {
+      console.log("❌ ERROR refillQueue:", e.message);
+    } finally {
+      loading = false;
+      setTimeout(refillQueue, 2000); // refresh list tiap 2 detik
+    }
+  }
+
+  refillQueue();
+
+  // Worker paralel tanpa henti
+  async function worker() {
+    while (true) {
+      const url = queue.shift();
+
+      if (!url) {
+        await new Promise((r) => setTimeout(r, 100));
         continue;
       }
 
-      console.log(`📌 Memuat ${urls.length} URL…`);
-
-      let current = 0;
-
-      // Worker hidup terus → selesai 1, langsung ambil 1 baru
-      async function worker() {
-        while (true) {
-          let u = urls[current++];
-          if (!u) break;
-          await hitUrl(u);
-        }
-      }
-
-      // Jalankan worker paralel
-      const pool = [];
-      for (let i = 0; i < WORKERS; i++) {
-        pool.push(worker());
-      }
-
-      await Promise.all(pool);
-    } catch (err) {
-      console.log("❌ ERROR LOOP:", err.message);
+      await hitUrl(url);
     }
+  }
+
+  // Jalankan worker sebanyak WORKERS
+  for (let i = 0; i < WORKERS; i++) {
+    worker();
   }
 }
 
