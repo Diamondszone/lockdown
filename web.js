@@ -5,7 +5,7 @@ import axios from "axios";
 // ======================== CONFIG ===========================
 const SOURCE_URL =
   process.env.SOURCE_URL ||
-  "https://ampnyapunyaku.top/api/lockdown-atc/node.txt";
+  "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 
 const CORS_PROXY =
   process.env.CORS_PROXY ||
@@ -18,6 +18,11 @@ function pushLog(msg) {
   console.log(line);
   LOGS.unshift(line);
   if (LOGS.length > 5000) LOGS = LOGS.slice(0, 5000);
+
+  // broadcast ke semua client SSE
+  for (const client of clients) {
+    client.res.write(`data: ${line}\n\n`);
+  }
 }
 
 // ======================== PARSER ===========================
@@ -137,7 +142,7 @@ app.get("/", (req, res) => {
   res.send(`
   <html>
   <head>
-    <title>JSON Checker Dashboard</title>
+    <title>Realtime JSON Checker Dashboard</title>
     <style>
       body { font-family: Arial; background: #111; color:#eee; padding:20px; }
       h1 { color:#4de34d; }
@@ -151,32 +156,51 @@ app.get("/", (req, res) => {
         font-size:14px;
         line-height:1.4;
       }
-      button {
-        padding:10px 20px;
-        background:#4de34d;
-        border:none;
-        border-radius:6px;
-        cursor:pointer;
-        margin-bottom:10px;
-      }
     </style>
   </head>
 
   <body>
-    <h1>🔍 JSON CHECKER DASHBOARD</h1>
-    <button onclick="location.reload()">Refresh</button>
-    <pre id="log">${LOGS.join("\n")}</pre>
+    <h1>🔍 JSON CHECKER (Realtime)</h1>
+    <pre id="log"></pre>
+
+    <script>
+      const logBox = document.getElementById("log");
+      const evt = new EventSource("/stream");
+
+      evt.onmessage = function(e) {
+        logBox.textContent = e.data + "\\n" + logBox.textContent;
+      };
+    </script>
+
   </body>
   </html>
   `);
 });
 
-app.get("/logs", (req, res) => {
-  res.json({ logs: LOGS });
+// ======================== SSE STREAM ===========================
+const clients = [];
+
+app.get("/stream", (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  res.flushHeaders();
+
+  res.write(": connected\n\n");
+
+  const client = { res };
+  clients.push(client);
+
+  req.on("close", () => {
+    clients.splice(clients.indexOf(client), 1);
+  });
 });
 
 app.listen(process.env.PORT || 3000, () =>
-  pushLog("🌐 Dashboard aktif di port 3000")
+  pushLog("🌐 Dashboard SSE aktif di port 3000")
 );
 
 // ======================== START ENGINE ===========================
