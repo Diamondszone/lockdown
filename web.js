@@ -232,50 +232,9 @@ app.get("/", (req, res) => {
       position: relative;
     }
 
-    /* Matrix Rain Effect dengan Karakter Mandarin */
-    .matrix-rain {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .rain-column {
-      position: absolute;
-      top: -100px;
-      animation: rainFall linear infinite;
-      color: rgba(168, 85, 247, 0.7);
-      font-size: 20px;
-      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
-      font-weight: 900;
-      text-shadow: 
-        0 0 10px rgba(168, 85, 247, 0.5),
-        0 0 20px rgba(168, 85, 247, 0.3);
-    }
-
-    @keyframes rainFall {
-      0% {
-        transform: translateY(-100px);
-        opacity: 0;
-      }
-      10% {
-        opacity: 1;
-      }
-      90% {
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(100vh);
-        opacity: 0;
-      }
-    }
-
-    /* Chinese Characters Background Effect - Tetap ada */
+    /* Chinese Characters Background Effect */
     body::before {
-      content: "锁封控网安全系统监视攻防加密解密验证扫描入侵防护检测威胁病毒防火墙攻击防御入侵检测恶意软件漏洞黑客安全协议数据保护网络安全信息安全系统安全应用程序网络攻击网络防御";
+      content: "锁 封 控 网 安 全 系 统 监 视 攻 防 加 密 解 密 验 证 扫 描 入 侵 防 护 检 测 威 胁 病 毒 防 火 墙 攻 击 防 御 入 侵 检 测 恶 意 软 件 漏 洞 黑 客 安 全 协 议 数 据 保 护 网 络 安 全 信 息 安 全 系 统 安 全 应 用 程 序 网 络 攻 击 网 络 防 御";
       position: fixed;
       top: 0;
       left: 0;
@@ -300,20 +259,45 @@ app.get("/", (req, res) => {
       100% { transform: translateY(-1500px) translateX(-300px); }
     }
 
-    /* Glitch Effect */
-    .glitch {
-      position: relative;
-      animation: glitch 5s infinite;
+    /* Matrix Rain Effect */
+    #matrix-rain {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
     }
 
-    @keyframes glitch {
-      0% { transform: translate(0); }
-      2% { transform: translate(-2px, 2px); }
-      4% { transform: translate(-2px, -2px); }
-      6% { transform: translate(2px, 2px); }
-      8% { transform: translate(2px, -2px); }
-      10% { transform: translate(0); }
-      100% { transform: translate(0); }
+    .rain-column {
+      position: absolute;
+      top: -100px;
+      animation: rainFall linear infinite;
+      color: rgba(168, 85, 247, 0.7);
+      font-size: 18px;
+      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+      font-weight: 900;
+      text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+      white-space: nowrap;
+    }
+
+    @keyframes rainFall {
+      0% {
+        transform: translateY(-100px);
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      90% {
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(100vh);
+        opacity: 0;
+      }
     }
 
     .container {
@@ -404,7 +388,7 @@ app.get("/", (req, res) => {
       letter-spacing: 1px;
     }
 
-    /* Stats Grid - NEON PURPLE METRICS */
+    /* Stats Grid */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -982,9 +966,9 @@ app.get("/", (req, res) => {
       margin-bottom: 16px;
       opacity: 0.7;
       text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
-    }
+       }
 
-        /* Terminal Effect */
+    /* Terminal Effect */
     .terminal-line {
       position: relative;
       padding-left: 20px;
@@ -1002,6 +986,22 @@ app.get("/", (req, res) => {
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50% { opacity: 0; }
+    }
+
+    /* Glitch Effect */
+    .glitch {
+      position: relative;
+      animation: glitch 5s infinite;
+    }
+
+    @keyframes glitch {
+      0% { transform: translate(0); }
+      2% { transform: translate(-2px, 2px); }
+      4% { transform: translate(-2px, -2px); }
+      6% { transform: translate(2px, 2px); }
+      8% { transform: translate(2px, -2px); }
+      10% { transform: translate(0); }
+      100% { transform: translate(0); }
     }
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -1154,9 +1154,9 @@ app.get("/", (req, res) => {
       for (let i = 0; i < 30; i++) {
         const column = document.createElement('div');
         column.className = 'rain-column';
-        column.style.left = `${(i * 3.3)}%`;
-        column.style.animationDuration = `${5 + Math.random() * 10}s`;
-        column.style.animationDelay = `${Math.random() * 5}s`;
+        column.style.left = (i * 3.3) + '%';
+        column.style.animationDuration = (5 + Math.random() * 10) + 's';
+        column.style.animationDelay = (Math.random() * 5) + 's';
         
         // Add characters to column
         let charString = '';
@@ -1190,14 +1190,14 @@ app.get("/", (req, res) => {
         // Add log
         addLog({
           time: new Date().toLocaleTimeString(),
-          message: `URL COPIED TO CLIPBOARD`,
+          message: 'URL COPIED TO CLIPBOARD',
           type: 'info'
         });
       }).catch(err => {
         console.error('Failed to copy: ', err);
         addLog({
           time: new Date().toLocaleTimeString(),
-          message: `FAILED TO COPY URL: ${err}`,
+          message: 'FAILED TO COPY URL: ' + err,
           type: 'error'
         });
       });
@@ -1244,11 +1244,13 @@ app.get("/", (req, res) => {
       if (emptyLogs) emptyLogs.remove();
       
       const logItem = document.createElement('div');
-      logItem.className = \`log-item \${log.type} terminal-line\`;
+      logItem.className = 'log-item ' + log.type + ' terminal-line';
       
       // Format time for cyberpunk style
       const now = new Date();
-      const timeStr = \`\${now.getHours().toString().padStart(2, '0')}:\${now.getMinutes().toString().padStart(2, '0')}:\${now.getSeconds().toString().padStart(2, '0')}\`;
+      const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                     now.getMinutes().toString().padStart(2, '0') + ':' + 
+                     now.getSeconds().toString().padStart(2, '0');
       
       let message = log.message;
       // Add emoji prefix based on type
@@ -1260,10 +1262,8 @@ app.get("/", (req, res) => {
         message = '🔵 ' + message;
       }
       
-      logItem.innerHTML = \`
-        <div class="log-time">[\${timeStr}]</div>
-        <div class="log-message">\${message}</div>
-      \`;
+      logItem.innerHTML = '<div class="log-time">[' + timeStr + ']</div>' +
+                         '<div class="log-message">' + message + '</div>';
       
       // Insert at the TOP of log content
       if (logContent.firstChild) {
@@ -1293,31 +1293,31 @@ app.get("/", (req, res) => {
       const urls = currentUrlTab === 'success' ? successUrls : failedUrls;
       
       if (urls.length === 0) {
-        urlList.innerHTML = \`
-          <div class="empty-state">
-            <i>\${currentUrlTab === 'success' ? '🟢' : '🔴'}</i>
-            <div>\${currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS'}</div>
-            <div style="font-size: 12px; margin-top: 8px;">\${currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL'}</div>
-          </div>
-        \`;
+        urlList.innerHTML = '<div class="empty-state">' +
+          '<i>' + (currentUrlTab === 'success' ? '🟢' : '🔴') + '</i>' +
+          '<div>' + (currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS') + '</div>' +
+          '<div style="font-size: 12px; margin-top: 8px;">' + 
+            (currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL') + 
+          '</div>' +
+        '</div>';
         return;
       }
       
-      urlList.innerHTML = urls.map(url => \`
-        <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
-          <div class="url-text">\${url.url}</div>
-          <div class="url-actions">
-            <div class="url-meta">
-              <span>HITS: \${url.count}</span>
-              <span>STATUS: \${currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
-            </div>
-            <button class="copy-btn" onclick="copyToClipboard('\${url.url}')" data-url="\${url.url}">
-              <i>📋</i>
-              COPY URL
-            </button>
-          </div>
-        </div>
-      \`).join('');
+      urlList.innerHTML = urls.map(url => {
+        return '<div class="url-item ' + (currentUrlTab === 'success' ? 'success' : 'failed') + '">' +
+          '<div class="url-text">' + url.url + '</div>' +
+          '<div class="url-actions">' +
+            '<div class="url-meta">' +
+              '<span>HITS: ' + url.count + '</span>' +
+              '<span>STATUS: ' + (currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE') + '</span>' +
+            '</div>' +
+            '<button class="copy-btn" onclick="copyToClipboard(\'' + url.url.replace(/'/g, "\\'") + '\')" data-url="' + url.url + '">' +
+              '<i>📋</i>' +
+              'COPY URL' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
     }
 
     // Switch URL tab
@@ -1341,13 +1341,11 @@ app.get("/", (req, res) => {
     // Clear logs
     function clearLogs() {
       logs = [];
-      logContent.innerHTML = \`
-        <div class="empty-state" id="empty-logs">
-          <i>📡</i>
-          <div>LOG PURGE COMPLETE</div>
-          <div style="font-size: 12px; margin-top: 8px;">AWAITING NEW CONNECTION DATA</div>
-        </div>
-      \`;
+      logContent.innerHTML = '<div class="empty-state" id="empty-logs">' +
+        '<i>📡</i>' +
+        '<div>LOG PURGE COMPLETE</div>' +
+        '<div style="font-size: 12px; margin-top: 8px;">AWAITING NEW CONNECTION DATA</div>' +
+      '</div>';
       
       // Add system log
       addLog({
@@ -1482,8 +1480,12 @@ app.get("/", (req, res) => {
       const columns = document.querySelectorAll('.rain-column');
       columns.forEach(col => {
         if (Math.random() > 0.8) {
-          col.style.color = \`rgba(\${Math.floor(Math.random() * 100 + 155)}, \${Math.floor(Math.random() * 50 + 85)}, 247, 0.9)\`;
-          col.style.textShadow = \`0 0 15px rgba(\${Math.floor(Math.random() * 100 + 155)}, \${Math.floor(Math.random() * 50 + 85)}, 247, 0.7)\`;
+          col.style.color = 'rgba(' + 
+            Math.floor(Math.random() * 100 + 155) + ', ' + 
+            Math.floor(Math.random() * 50 + 85) + ', 247, 0.9)';
+          col.style.textShadow = '0 0 15px rgba(' + 
+            Math.floor(Math.random() * 100 + 155) + ', ' + 
+            Math.floor(Math.random() * 50 + 85) + ', 247, 0.7)';
         }
       });
     }, 3000);
