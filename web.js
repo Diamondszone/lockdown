@@ -232,9 +232,52 @@ app.get("/", (req, res) => {
       position: relative;
     }
 
+    /* NEON PURPLE METRIC RAIN - FIXED */
+    .metric-rain {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: -1;
+      overflow: hidden;
+    }
+
+    .metric-drop {
+      position: absolute;
+      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+      font-weight: 900;
+      font-size: 20px;
+      color: rgba(168, 85, 247, 0.7);
+      text-shadow: 
+        0 0 10px rgba(168, 85, 247, 0.9),
+        0 0 20px rgba(168, 85, 247, 0.7),
+        0 0 30px rgba(168, 85, 247, 0.5);
+      opacity: 0;
+      animation: metricFall linear infinite;
+    }
+
+    @keyframes metricFall {
+      0% {
+        transform: translateY(-100px) translateX(0);
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      90% {
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(100vh) translateX(0);
+        opacity: 0;
+      }
+    }
+
     /* Chinese Characters Background Effect */
     body::before {
-      content: "锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 锁 封 封 封 封 封 封 封 封 封 封 封 封 封 封 封 控 控 控 控 控 控 控 控 控 控 控 控 控 控 控 网 网 网 网 网 网 网 网 网 网 网 网 网 网 网 安 安 安 安 安 安 安 安 安 安 安 安 安 安 安 全 全 全 全 全 全 全 全 全 全 全 全 全 全 全 系 系 系 系 系 系 系 系 系 系 系 系 系 系 系 统 统 统 统 统 统 统 统 统 统 统 统 统 统 统 监 监 监 监 监 监 监 监 监 监 监 监 监 监 监 视 视 视 视 视 视 视 视 视 视 视 视 视 视 视";
+      content: "锁 封 控 网 安 全 系 统 监 视 安 全 锁 封 控 网 安 全 系 统 监 视 安 全 锁 封 控 网 安 全 系 统 监 视 安 全";
       position: fixed;
       top: 0;
       left: 0;
@@ -244,7 +287,7 @@ app.get("/", (req, res) => {
       color: rgba(168, 85, 247, 0.05);
       line-height: 1.8;
       word-break: break-all;
-      z-index: -1;
+      z-index: -2;
       animation: floatBackground 120s linear infinite;
       text-shadow: 0 0 10px rgba(168, 85, 247, 0.1);
       font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
@@ -627,6 +670,44 @@ app.get("/", (req, res) => {
       box-shadow: 0 0 20px rgba(255, 42, 109, 0.4);
     }
 
+    /* NEW: Copy Button */
+    .copy-btn {
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(168, 85, 247, 0.5);
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(139, 92, 246, 0.1));
+      color: #c4b5fd;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-shadow: 0 0 5px rgba(168, 85, 247, 0.3);
+      position: relative;
+      overflow: hidden;
+      margin-left: auto;
+    }
+
+    .copy-btn:hover {
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(139, 92, 246, 0.2));
+      border-color: #a855f7;
+      color: #ffffff;
+      box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+      transform: scale(1.05);
+    }
+
+    .copy-btn:active {
+      transform: scale(0.95);
+    }
+
+    .copy-btn.copied {
+      background: linear-gradient(135deg, rgba(0, 255, 136, 0.3), rgba(0, 220, 130, 0.2));
+      border-color: #00ff88;
+      color: #00ff88;
+    }
+
     /* Log Panel */
     .log-panel {
       height: 100%;
@@ -783,6 +864,9 @@ app.get("/", (req, res) => {
       line-height: 1.5;
       transition: all 0.2s ease;
       position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
     .url-item:hover {
@@ -811,10 +895,10 @@ app.get("/", (req, res) => {
 
     .url-text {
       word-break: break-all;
-      margin-bottom: 6px;
       color: #f1f5f9;
       font-weight: 500;
       font-family: 'Courier New', monospace;
+      font-size: 14px;
     }
 
     .url-meta {
@@ -822,8 +906,16 @@ app.get("/", (req, res) => {
       color: #a78bfa;
       display: flex;
       justify-content: space-between;
+      align-items: center;
       font-weight: 500;
       text-shadow: 0 0 5px rgba(168, 85, 247, 0.2);
+      width: 100%;
+    }
+
+    .url-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     /* Scrollbar */
@@ -890,7 +982,7 @@ app.get("/", (req, res) => {
     .empty-state {
       text-align: center;
       padding: 60px 20px;
-      color: #a78bfa;
+           color: #a78bfa;
     }
 
     .empty-state i {
@@ -923,6 +1015,9 @@ app.get("/", (req, res) => {
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- NEON PURPLE METRIC RAIN -->
+  <div class="metric-rain" id="metricRain"></div>
+
   <div class="container">
     <header class="glitch">
       <div class="header-title">
@@ -1055,7 +1150,117 @@ app.get("/", (req, res) => {
 
     const logContent = document.getElementById('log-content');
     const urlList = document.getElementById('url-list');
+    const metricRain = document.getElementById('metricRain');
     const evt = new EventSource("/stream");
+
+    // Chinese characters for metric rain
+    const chineseMetrics = [
+      "锁", "封", "控", "网", "安", "全", "系", "统", 
+      "监", "视", "防", "护", "密", "码", "验", "证",
+      "数", "据", "流", "量", "节", "点", "服", "务",
+      "攻", "击", "防", "御", "入", "侵", "检", "测"
+    ];
+
+    // Create metric rain effect
+    function createMetricRain() {
+      const metricsCount = 50; // Number of falling metrics
+      
+      for (let i = 0; i < metricsCount; i++) {
+        setTimeout(() => {
+          const metric = document.createElement('div');
+          metric.className = 'metric-drop';
+          
+          // Random Chinese character
+          const char = chineseMetrics[Math.floor(Math.random() * chineseMetrics.length)];
+          metric.textContent = char;
+          
+          // Random position
+          const left = Math.random() * 100;
+          metric.style.left = `${left}%`;
+          
+          // Random animation duration (3-8 seconds)
+          const duration = 3 + Math.random() * 5;
+          metric.style.animationDuration = `${duration}s`;
+          
+          // Random animation delay
+          const delay = Math.random() * 5;
+          metric.style.animationDelay = `${delay}s`;
+          
+          // Random font size
+          const size = 16 + Math.random() * 12;
+          metric.style.fontSize = `${size}px`;
+          
+          // Random opacity
+          const opacity = 0.3 + Math.random() * 0.5;
+          metric.style.opacity = opacity;
+          
+          metricRain.appendChild(metric);
+          
+          // Remove after animation completes
+          setTimeout(() => {
+            if (metric.parentNode === metricRain) {
+              metricRain.removeChild(metric);
+            }
+          }, (duration + delay) * 1000);
+        }, i * 100);
+      }
+    }
+
+    // Continuously create metric rain
+    function startMetricRain() {
+      createMetricRain();
+      // Create new rain every 3 seconds
+      setInterval(createMetricRain, 3000);
+    }
+
+    // Copy URL function
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        // Show success feedback
+        const event = new CustomEvent('showToast', {
+          detail: { message: 'URL copied to clipboard!', type: 'success' }
+        });
+        window.dispatchEvent(event);
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+        const event = new CustomEvent('showToast', {
+          detail: { message: 'Failed to copy URL', type: 'error' }
+        });
+        window.dispatchEvent(event);
+      });
+    }
+
+    // Toast notification function
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        background: ${type === 'success' ? 'rgba(0, 255, 136, 0.9)' : 'rgba(255, 42, 109, 0.9)'};
+        color: white;
+        border-radius: 8px;
+        font-weight: 600;
+        z-index: 10000;
+        animation: slideIn 0.3s ease-out, slideOut 0.3s ease-in 2.7s;
+        box-shadow: 0 0 20px ${type === 'success' ? 'rgba(0, 255, 136, 0.5)' : 'rgba(255, 42, 109, 0.5)'};
+        border: 1px solid ${type === 'success' ? '#00ff88' : '#ff2a6d'};
+      `;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 3000);
+    }
+
+    // Listen for toast events
+    window.addEventListener('showToast', (e) => {
+      showToast(e.detail.message, e.detail.type);
+    });
 
     // Update stats display
     function updateStats(data) {
@@ -1157,15 +1362,35 @@ app.get("/", (req, res) => {
         return;
       }
       
-      urlList.innerHTML = urls.map(url => \`
+      urlList.innerHTML = urls.map((url, index) => \`
         <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
           <div class="url-text">\${url.url}</div>
           <div class="url-meta">
-            <span>HITS: \${url.count}</span>
-            <span>STATUS: \${currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
+            <div class="url-status">
+              <span>HITS: \${url.count}</span>
+              <span>STATUS: \${currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE'}</span>
+            </div>
+            <button class="copy-btn" onclick="copyUrl('\${url.url}', this)">
+              <i>📋</i>
+              COPY URL
+            </button>
           </div>
         </div>
       \`).join('');
+    }
+
+    // Copy URL function
+    function copyUrl(url, button) {
+      copyToClipboard(url);
+      
+      // Visual feedback
+      button.innerHTML = '<i>✅</i> COPIED';
+      button.classList.add('copied');
+      
+      setTimeout(() => {
+        button.innerHTML = '<i>📋</i> COPY URL';
+        button.classList.remove('copied');
+      }, 2000);
     }
 
     // Switch URL tab
@@ -1203,6 +1428,9 @@ app.get("/", (req, res) => {
         message: 'SYSTEM: LOG PURGE INITIATED',
         type: 'info'
       });
+      
+      // Show toast notification
+      showToast('Logs purged successfully!', 'success');
     }
 
     // Refresh stats
@@ -1217,6 +1445,10 @@ app.get("/", (req, res) => {
         .then(r => r.json())
         .then(data => {
           updateStats(data);
+          showToast('Force scan completed!', 'success');
+        })
+        .catch(err => {
+          showToast('Force scan failed!', 'error');
         });
     }
 
@@ -1274,6 +1506,33 @@ app.get("/", (req, res) => {
 
     // Initial setup
     updateServerTime();
+    startMetricRain();
+    
+    // Add CSS for toast animation
+    const style = document.createElement('style');
+    style.textContent = \`
+      @keyframes slideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes slideOut {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+      }
+    \`;
+    document.head.appendChild(style);
     
     // Load initial data
     fetch('/api/stats')
@@ -1284,6 +1543,11 @@ app.get("/", (req, res) => {
         addLog({
           time: new Date().toLocaleTimeString(),
           message: 'SYSTEM: LOCKDOWN CONTROL INITIALIZED',
+          type: 'info'
+        });
+        addLog({
+          time: new Date().toLocaleTimeString(),
+          message: 'SYSTEM: METRIC RAIN EFFECT ACTIVATED',
           type: 'info'
         });
         addLog({
@@ -1306,7 +1570,9 @@ app.get("/", (req, res) => {
           'SYSTEM: ALL SYSTEMS NOMINAL',
           'SYSTEM: PROXY NETWORK ACTIVE',
           'SYSTEM: ENCRYPTION ACTIVE',
-          'SYSTEM: TARGET ACQUISITION RUNNING'
+          'SYSTEM: TARGET ACQUISITION RUNNING',
+          'SYSTEM: METRIC STREAM STABLE',
+          'SYSTEM: NEON PURPLE RAIN ACTIVE'
         ];
         addLog({
           time: new Date().toLocaleTimeString(),
