@@ -13,8 +13,8 @@ const CORS_PROXY =
 
 // ======================== DATA STRUCTURE ===========================
 const clients = [];
-const successUrls = new Set();
-const failedUrls = new Set();
+const successUrls = new Map(); // url -> {count, lastSeen}
+const failedUrls = new Map();   // url -> {count, lastSeen}
 let stats = {
   totalHits: 0,
   success: 0,
@@ -23,17 +23,17 @@ let stats = {
 };
 
 // ======================== BROADCAST SYSTEM ===========================
-function broadcastLog(msg, type = "info") {
+function broadcastLog(msg, type = "info", url = "") {
   const line = {
     id: Date.now(),
-    time: new Date().toISOString(),
+    time: new Date().toLocaleTimeString(),
     message: msg,
     type: type // info, success, error
   };
   
   console.log(`[${line.time}] ${msg}`);
 
-  // broadcast ke dashboard (hanya realtime, tidak simpan di memori)
+  // broadcast ke dashboard
   for (const client of clients) {
     client.res.write(`data: ${JSON.stringify(line)}\n\n`);
   }
@@ -44,8 +44,7 @@ function broadcastStats() {
     type: "stats",
     data: {
       ...stats,
-      successUrls: Array.from(successUrls).slice(-50), // simpan 50 terakhir
-      failedUrls: Array.from(failedUrls).slice(-50),   // simpan 50 terakhir
+      successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
       uniqueSuccess: successUrls.size,
       uniqueFailed: failedUrls.size
     }
@@ -53,6 +52,21 @@ function broadcastStats() {
   
   for (const client of clients) {
     client.res.write(`data: ${JSON.stringify(statData)}\n\n`);
+  }
+}
+
+function broadcastUrlUpdate(type, url) {
+  const urlData = {
+    type: "urlUpdate",
+    data: {
+      type: type, // "success" or "failed"
+      url: url,
+      time: new Date().toLocaleTimeString()
+    }
+  };
+  
+  for (const client of clients) {
+    client.res.write(`data: ${JSON.stringify(urlData)}\n\n`);
   }
 }
 
@@ -109,44 +123,56 @@ const fetchText = async (url) => {
 
 const buildProxyUrl = (u) => `${CORS_PROXY}/${u}`;
 
-// ======================== HIT URL (Realtime Log) ===========================
+// ======================== HIT URL ===========================
 async function hitUrl(url) {
   stats.totalHits++;
+  stats.lastUpdate = new Date().toISOString();
   
   const direct = await fetchText(url);
   const directOk = direct.ok && !isCaptcha(direct.text) && isJson(direct.text);
 
   if (directOk) {
     stats.success++;
-    successUrls.add(url);
+    successUrls.set(url, {
+      count: (successUrls.get(url)?.count || 0) + 1,
+      lastSeen: new Date().toISOString()
+    });
     failedUrls.delete(url);
-    broadcastLog(`✅ ${url}`, "success");
+    broadcastLog(`✅ Success: ${url}`, "success", url);
+    broadcastUrlUpdate("success", url);
     broadcastStats();
     return { success: true, method: "direct", url };
   }
 
   const proxied = await fetchText(buildProxyUrl(url));
-  const proxyOk =
-    proxied.ok && !isCaptcha(proxied.text) && isJson(proxied.text);
+  const proxyOk = proxied.ok && !isCaptcha(proxied.text) && isJson(proxied.text);
 
   if (proxyOk) {
     stats.success++;
-    successUrls.add(url);
+    successUrls.set(url, {
+      count: (successUrls.get(url)?.count || 0) + 1,
+      lastSeen: new Date().toISOString()
+    });
     failedUrls.delete(url);
-    broadcastLog(`✅ ${url} (via Proxy)`, "success");
+    broadcastLog(`✅ Success (via Proxy): ${url}`, "success", url);
+    broadcastUrlUpdate("success", url);
     broadcastStats();
     return { success: true, method: "proxy", url };
   } else {
     stats.failed++;
-    failedUrls.add(url);
+    failedUrls.set(url, {
+      count: (failedUrls.get(url)?.count || 0) + 1,
+      lastSeen: new Date().toISOString()
+    });
     successUrls.delete(url);
-    broadcastLog(`❌ ${url}`, "error");
+    broadcastLog(`❌ Failed: ${url}`, "error", url);
+    broadcastUrlUpdate("failed", url);
     broadcastStats();
     return { success: false, url };
   }
 }
 
-// ======================== WORKER NON-BLOCKING ===========================
+// ======================== WORKER ===========================
 async function mainLoop() {
   const WORKERS = 20;
   const MAX_PARALLEL = 4;
@@ -158,22 +184,28 @@ async function mainLoop() {
       const urls = listResp.ok ? parseList(listResp.text) : [];
 
       if (urls.length === 0) {
-        broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
+        broadcastLog("❌ SOURCE empty, retrying...", "error");
         await new Promise(r => setTimeout(r, 5000));
         continue;
       }
 
-      broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
+      broadcastLog(`📥 Loaded ${urls.length} URLs`, "info");
 
       let current = 0;
+      const processedUrls = new Set();
 
       async function worker() {
         while (true) {
           const batch = [];
+          const batchUrls = [];
 
           for (let i = 0; i < MAX_PARALLEL; i++) {
+            if (current >= urls.length) break;
             let u = urls[current++];
-            if (!u) break;
+            if (!u || processedUrls.has(u)) continue;
+            
+            processedUrls.add(u);
+            batchUrls.push(u);
             batch.push(hitUrl(u));
           }
 
@@ -189,10 +221,11 @@ async function mainLoop() {
 
       await Promise.all(pool);
       
-      broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
+      broadcastLog(`🔄 Loop completed, restarting...`, "info");
+      await new Promise(r => setTimeout(r, 1000));
       
     } catch (err) {
-      broadcastLog("❌ ERROR LOOP: " + err.message, "error");
+      broadcastLog(`❌ ERROR: ${err.message}`, "error");
       await new Promise(r => setTimeout(r, 10000));
     }
   }
@@ -206,106 +239,89 @@ app.get("/", (req, res) => {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>⚡ JSON Checker Pro Dashboard</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <title>JSON Checker Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     }
 
     body {
-      background: linear-gradient(135deg, #0a0a0f 0%, #151522 100%);
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      color: #e0e0ff;
+      background: #0f172a;
+      color: #f8fafc;
       min-height: 100vh;
-      overflow-x: hidden;
     }
 
-    /* HEADER */
-    .header {
-      background: rgba(10, 10, 20, 0.95);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid rgba(86, 247, 196, 0.2);
-      padding: 20px 30px;
-      box-shadow: 0 5px 30px rgba(0, 0, 0, 0.5);
-      position: sticky;
-      top: 0;
-      z-index: 1000;
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
     }
 
-    .title-container {
+    /* Header */
+    header {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      border: 1px solid #334155;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    }
+
+    .header-title {
       display: flex;
       align-items: center;
-      gap: 15px;
-      margin-bottom: 15px;
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
-    .logo {
-      color: #56f7c4;
+    .header-title h1 {
       font-size: 28px;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.7; }
-    }
-
-    .title {
-      font-size: 28px;
-      font-weight: 800;
-      background: linear-gradient(90deg, #56f7c4, #2af598);
+      font-weight: 700;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      text-shadow: 0 0 30px rgba(86, 247, 196, 0.3);
     }
 
-    .subtitle {
+    .header-title i {
+      font-size: 32px;
+      color: #3b82f6;
+    }
+
+    .header-subtitle {
+      color: #94a3b8;
       font-size: 14px;
-      color: #88aaff;
-      opacity: 0.9;
+      margin-bottom: 24px;
     }
 
-    /* STATS GRID */
+    /* Stats Grid */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-top: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
     }
 
     .stat-card {
-      background: rgba(20, 20, 30, 0.8);
-      border: 1px solid rgba(86, 247, 196, 0.1);
-      border-radius: 12px;
-      padding: 18px;
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 20px;
+      border: 1px solid #334155;
       transition: all 0.3s ease;
     }
 
     .stat-card:hover {
-      transform: translateY(-3px);
-      border-color: rgba(86, 247, 196, 0.3);
-      box-shadow: 0 5px 20px rgba(86, 247, 196, 0.1);
-    }
-
-    .stat-card.success {
-      border-left: 4px solid #2af598;
-    }
-
-    .stat-card.fail {
-      border-left: 4px solid #ff6b9d;
-    }
-
-    .stat-card.total {
-      border-left: 4px solid #56a8f7;
+      border-color: #3b82f6;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
     }
 
     .stat-label {
       font-size: 12px;
-      color: #aaccff;
+      color: #94a3b8;
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 8px;
@@ -313,520 +329,662 @@ app.get("/", (req, res) => {
 
     .stat-value {
       font-size: 32px;
-      font-weight: 800;
-      margin-bottom: 5px;
+      font-weight: 700;
+      margin-bottom: 4px;
     }
 
-    .stat-success { color: #2af598; }
-    .stat-fail { color: #ff6b9d; }
-    .stat-total { color: #56a8f7; }
+    .stat-success { color: #10b981; }
+    .stat-failed { color: #ef4444; }
+    .stat-total { color: #3b82f6; }
+    .stat-unique { color: #8b5cf6; }
 
-    /* MAIN CONTENT */
+    .stat-detail {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    /* Main Content */
     .main-content {
-      display: flex;
-      padding: 20px;
-      gap: 20px;
-      height: calc(100vh - 250px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      height: 60vh;
     }
 
-    /* TABS */
-    .tabs {
-      display: flex;
-      background: rgba(20, 20, 30, 0.8);
+    @media (max-width: 1024px) {
+      .main-content {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+    }
+
+    /* Panel */
+    .panel {
+      background: #1e293b;
       border-radius: 12px;
-      padding: 5px;
-      margin-bottom: 20px;
-      border: 1px solid rgba(86, 247, 196, 0.1);
-    }
-
-    .tab {
-      flex: 1;
-      padding: 12px 20px;
-      text-align: center;
-      cursor: pointer;
-      border-radius: 8px;
-      transition: all 0.3s ease;
-      font-weight: 600;
-      color: #88aaff;
-    }
-
-    .tab.active {
-      background: rgba(86, 247, 196, 0.15);
-      color: #56f7c4;
-      box-shadow: 0 2px 10px rgba(86, 247, 196, 0.2);
-    }
-
-    .tab:hover:not(.active) {
-      background: rgba(86, 247, 196, 0.05);
-    }
-
-    /* TAB CONTENT */
-    .tab-content {
-      display: none;
-      height: 100%;
-    }
-
-    .tab-content.active {
-      display: block;
-    }
-
-    /* LOG PANEL */
-    .log-panel {
-      flex: 2;
-      background: rgba(10, 10, 15, 0.9);
-      border-radius: 15px;
-      border: 1px solid rgba(86, 247, 196, 0.15);
+      border: 1px solid #334155;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
     }
 
-    .log-header {
-      padding: 15px 20px;
-      background: rgba(20, 20, 30, 0.9);
-      border-bottom: 1px solid rgba(86, 247, 196, 0.1);
+    .panel-header {
+      padding: 16px 20px;
+      background: rgba(30, 41, 59, 0.9);
+      border-bottom: 1px solid #334155;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
 
-    .log-controls button {
-      background: rgba(86, 247, 196, 0.1);
-      border: 1px solid rgba(86, 247, 196, 0.3);
-      color: #56f7c4;
-      padding: 8px 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.3s ease;
+    .panel-title {
+      font-size: 18px;
       font-weight: 600;
-    }
-
-    .log-controls button:hover {
-      background: rgba(86, 247, 196, 0.2);
-      transform: scale(1.05);
-    }
-
-    .log-box {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    /* URL LIST PANEL */
-    .url-panel {
-      flex: 1;
-      background: rgba(10, 10, 15, 0.9);
-      border-radius: 15px;
-      border: 1px solid rgba(86, 247, 196, 0.15);
-      overflow: hidden;
+      color: #e2e8f0;
       display: flex;
-      flex-direction: column;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      align-items: center;
+      gap: 8px;
     }
 
-    .url-list {
+    .panel-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      background: #334155;
+      color: #e2e8f0;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      background: #475569;
+      border-color: #64748b;
+    }
+
+    .btn-clear {
+      background: #dc2626;
+      border-color: #ef4444;
+      color: white;
+    }
+
+    .btn-clear:hover {
+      background: #ef4444;
+      border-color: #f87171;
+    }
+
+    /* Log Panel */
+    .log-panel {
+      height: 100%;
+    }
+
+    .log-content {
       flex: 1;
-      padding: 20px;
+      padding: 16px;
       overflow-y: auto;
+      display: flex;
+      flex-direction: column-reverse;
     }
 
-    .url-item {
-      padding: 12px 15px;
-      margin-bottom: 10px;
-      background: rgba(20, 20, 30, 0.7);
-      border-radius: 8px;
-      border-left: 4px solid;
-      word-break: break-all;
-      transition: all 0.3s ease;
-    }
-
-    .url-item:hover {
-      transform: translateX(5px);
-      background: rgba(20, 20, 30, 0.9);
-    }
-
-    .url-item.success {
-      border-left-color: #2af598;
-    }
-
-    .url-item.fail {
-      border-left-color: #ff6b9d;
-    }
-
-    .url-time {
-      font-size: 11px;
-      color: #88aaff;
-      margin-bottom: 5px;
-    }
-
-    .url-text {
-      font-size: 12px;
-    }
-
-    /* LOG ITEMS */
     .log-item {
-      padding: 10px 15px;
-      margin-bottom: 10px;
+      padding: 12px;
+      margin-bottom: 8px;
       border-radius: 8px;
-      background: rgba(20, 20, 30, 0.7);
+      background: rgba(30, 41, 59, 0.7);
       border-left: 4px solid;
-      animation: fadeIn 0.3s ease;
+      font-size: 13px;
+      line-height: 1.4;
+      animation: slideIn 0.3s ease;
     }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
     }
 
     .log-item.info {
-      border-left-color: #56a8f7;
-      color: #aaccff;
+      border-left-color: #3b82f6;
+      color: #93c5fd;
     }
 
     .log-item.success {
-      border-left-color: #2af598;
-      color: #aaffcc;
+      border-left-color: #10b981;
+      color: #a7f3d0;
     }
 
     .log-item.error {
-      border-left-color: #ff6b9d;
-      color: #ffaacc;
+      border-left-color: #ef4444;
+      color: #fca5a5;
     }
 
     .log-time {
       font-size: 11px;
-      color: #88aaff;
-      margin-bottom: 3px;
+      color: #64748b;
+      margin-bottom: 4px;
+      font-family: 'Courier New', monospace;
     }
 
     .log-message {
-      font-size: 13px;
+      word-break: break-all;
     }
 
-    /* SCROLLBAR */
+    /* URL Panel */
+    .url-panel {
+      height: 100%;
+    }
+
+    .url-tabs {
+      display: flex;
+      background: #0f172a;
+      border-bottom: 1px solid #334155;
+    }
+
+    .url-tab {
+      flex: 1;
+      padding: 12px 16px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #94a3b8;
+      transition: all 0.2s ease;
+      border-bottom: 2px solid transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .url-tab:hover {
+      background: rgba(30, 41, 59, 0.5);
+    }
+
+    .url-tab.active {
+      color: #3b82f6;
+      border-bottom-color: #3b82f6;
+      background: rgba(30, 41, 59, 0.8);
+    }
+
+    .badge {
+      background: #475569;
+      color: #f8fafc;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .url-content {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .url-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .url-item {
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid #334155;
+      font-size: 12px;
+      line-height: 1.4;
+      transition: all 0.2s ease;
+    }
+
+    .url-item:hover {
+      border-color: #475569;
+      background: rgba(30, 41, 59, 0.9);
+    }
+
+    .url-item.success {
+      border-left: 4px solid #10b981;
+    }
+
+    .url-item.failed {
+      border-left: 4px solid #ef4444;
+    }
+
+    .url-text {
+      word-break: break-all;
+      margin-bottom: 4px;
+    }
+
+    .url-meta {
+      font-size: 11px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
     }
 
     ::-webkit-scrollbar-track {
-      background: rgba(20, 20, 30, 0.5);
+      background: #1e293b;
       border-radius: 4px;
     }
 
     ::-webkit-scrollbar-thumb {
-      background: rgba(86, 247, 196, 0.3);
+      background: #475569;
       border-radius: 4px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: rgba(86, 247, 196, 0.5);
+      background: #64748b;
     }
 
-    /* RESPONSIVE */
-    @media (max-width: 1024px) {
-      .main-content {
-        flex-direction: column;
-        height: auto;
-      }
-      
-      .log-panel, .url-panel {
-        height: 500px;
-      }
+    /* Footer */
+    footer {
+      margin-top: 24px;
+      text-align: center;
+      color: #64748b;
+      font-size: 12px;
+      padding: 16px;
+      border-top: 1px solid #334155;
     }
   </style>
 </head>
-
 <body>
-  <div class="header">
-    <div class="title-container">
-      <div class="logo">
-        <i class="fas fa-bolt"></i>
+  <div class="container">
+    <header>
+      <div class="header-title">
+        <i>🔍</i>
+        <h1>JSON Checker Dashboard</h1>
       </div>
-      <div>
-        <div class="title">JSON Checker Pro Dashboard</div>
-        <div class="subtitle">Realtime Monitoring & Analytics</div>
+      <div class="header-subtitle">
+        Real-time monitoring of JSON endpoints with automatic proxy fallback
       </div>
-    </div>
+      
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Hits</div>
+          <div class="stat-value stat-total" id="total-hits">0</div>
+          <div class="stat-detail">Total requests made</div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-label">Success</div>
+          <div class="stat-value stat-success" id="success-count">0</div>
+          <div class="stat-detail"><span id="success-rate">0%</span> success rate</div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-label">Failed</div>
+          <div class="stat-value stat-failed" id="failed-count">0</div>
+          <div class="stat-detail"><span id="failed-rate">0%</span> failure rate</div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-label">Unique URLs</div>
+          <div class="stat-value stat-unique" id="unique-urls">0</div>
+          <div class="stat-detail"><span id="unique-success">0</span> success / <span id="unique-failed">0</span> failed</div>
+        </div>
+      </div>
+    </header>
 
-    <div class="stats-grid">
-      <div class="stat-card total">
-        <div class="stat-label">Total Hits</div>
-        <div class="stat-value stat-total" id="s-total">0</div>
-        <div class="stat-sub">Live Requests</div>
+    <main class="main-content">
+      <!-- Logs Panel -->
+      <div class="panel log-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i>📋</i>
+            Real-time Logs
+          </div>
+          <div class="panel-actions">
+            <button class="btn" onclick="clearLogs()">
+              <i>🗑️</i>
+              Clear Logs
+            </button>
+          </div>
+        </div>
+        <div class="log-content" id="log-content">
+          <div class="log-item info">
+            <div class="log-time">System</div>
+            <div class="log-message">Dashboard initialized. Waiting for logs...</div>
+          </div>
+        </div>
       </div>
-      
-      <div class="stat-card success">
-        <div class="stat-label">Success</div>
-        <div class="stat-value stat-success" id="s-success">0</div>
-        <div class="stat-sub" id="s-success-percent">0% Success Rate</div>
-      </div>
-      
-      <div class="stat-card fail">
-        <div class="stat-label">Failed</div>
-        <div class="stat-value stat-fail" id="s-fail">0</div>
-        <div class="stat-sub" id="s-fail-percent">0% Failure Rate</div>
-      </div>
-      
-      <div class="stat-card">
-        <div class="stat-label">Unique URLs</div>
-        <div class="stat-value stat-total" id="s-unique">0</div>
-        <div class="stat-sub" id="s-urls">0 Success / 0 Failed</div>
-      </div>
-    </div>
-  </div>
 
-  <div class="main-content">
-    <!-- LEFT PANEL: LOGS -->
-    <div class="log-panel">
-      <div class="log-header">
-        <div style="font-size: 18px; font-weight: 600; color: #56f7c4;">
-          <i class="fas fa-stream"></i> Real-time Logs
+      <!-- URLs Panel -->
+      <div class="panel url-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i>🔗</i>
+            URL Status
+          </div>
+          <div class="panel-actions">
+            <button class="btn" onclick="refreshStats()">
+              <i>🔄</i>
+              Refresh
+            </button>
+          </div>
         </div>
-        <div class="log-controls">
-          <button onclick="clearLogs()">
-            <i class="fas fa-trash"></i> Clear Logs
-          </button>
+        
+        <div class="url-tabs">
+          <div class="url-tab active" onclick="switchUrlTab('success')">
+            <span>Success URLs</span>
+            <span class="badge" id="success-badge">0</span>
+          </div>
+          <div class="url-tab" onclick="switchUrlTab('failed')">
+            <span>Failed URLs</span>
+            <span class="badge" id="failed-badge">0</span>
+          </div>
+        </div>
+        
+        <div class="url-content">
+          <div class="url-list" id="url-list">
+            <div class="url-item success">
+              <div class="url-text">No data yet...</div>
+              <div class="url-meta">
+                <span>Status: Waiting</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      
-      <div class="tabs">
-        <div class="tab active" onclick="switchTab('all-logs')">All Logs</div>
-        <div class="tab" onclick="switchTab('success-logs')">Success Only</div>
-        <div class="tab" onclick="switchTab('error-logs')">Errors Only</div>
-      </div>
-      
-      <div class="log-box" id="log-box"></div>
-    </div>
+    </main>
 
-    <!-- RIGHT PANEL: URL LISTS -->
-    <div class="url-panel">
-      <div class="log-header">
-        <div style="font-size: 18px; font-weight: 600; color: #56f7c4;">
-          <i class="fas fa-link"></i> URL Status
-        </div>
-        <div class="log-controls">
-          <button onclick="refreshStats()">
-            <i class="fas fa-sync-alt"></i> Refresh
-          </button>
-        </div>
-      </div>
-      
-      <div class="tabs">
-        <div class="tab active" onclick="switchUrlTab('success-urls')">
-          <i class="fas fa-check-circle"></i> Success URLs
-          <span id="success-count" class="badge">0</span>
-        </div>
-        <div class="tab" onclick="switchUrlTab('failed-urls')">
-          <i class="fas fa-times-circle"></i> Failed URLs
-          <span id="fail-count" class="badge">0</span>
-        </div>
-      </div>
-      
-      <div class="url-list" id="url-list">
-        <!-- URL lists will be populated here -->
-      </div>
-    </div>
+    <footer>
+      <p>Last Updated: <span id="last-updated">-</span> | Server Time: <span id="server-time">-</span></p>
+    </footer>
   </div>
 
   <script>
     let logs = [];
-    let currentTab = 'all-logs';
-    let currentUrlTab = 'success-urls';
-    let statsData = {
+    let successUrls = [];
+    let failedUrls = [];
+    let currentUrlTab = 'success';
+    let stats = {
       totalHits: 0,
       success: 0,
       failed: 0,
+      successRate: '0.0',
       uniqueSuccess: 0,
       uniqueFailed: 0
     };
 
-    const logBox = document.getElementById('log-box');
+    const logContent = document.getElementById('log-content');
     const urlList = document.getElementById('url-list');
     const evt = new EventSource("/stream");
 
     // Update stats display
-    function updateStatsDisplay() {
-      const total = statsData.totalHits;
-      const success = statsData.success;
-      const failed = statsData.failed;
-      const uniqueTotal = statsData.uniqueSuccess + statsData.uniqueFailed;
-      
-      document.getElementById('s-total').textContent = total.toLocaleString();
-      document.getElementById('s-success').textContent = success.toLocaleString();
-      document.getElementById('s-fail').textContent = failed.toLocaleString();
-      document.getElementById('s-unique').textContent = uniqueTotal.toLocaleString();
-      document.getElementById('s-urls').textContent = 
-        \`\${statsData.uniqueSuccess.toLocaleString()} / \${statsData.uniqueFailed.toLocaleString()}\`;
-      
-      // Update percentages
-      if (total > 0) {
-        const successPercent = ((success / total) * 100).toFixed(1);
-        const failPercent = ((failed / total) * 100).toFixed(1);
-        document.getElementById('s-success-percent').textContent = \`\${successPercent}% Success Rate\`;
-        document.getElementById('s-fail-percent').textContent = \`\${failPercent}% Failure Rate\`;
-      }
-      
-      // Update badge counts
-      document.getElementById('success-count').textContent = statsData.uniqueSuccess;
-      document.getElementById('fail-count').textContent = statsData.uniqueFailed;
+    function updateStats() {
+      document.getElementById('total-hits').textContent = stats.totalHits.toLocaleString();
+      document.getElementById('success-count').textContent = stats.success.toLocaleString();
+      document.getElementById('failed-count').textContent = stats.failed.toLocaleString();
+      document.getElementById('unique-urls').textContent = (stats.uniqueSuccess + stats.uniqueFailed).toLocaleString();
+      document.getElementById('unique-success').textContent = stats.uniqueSuccess.toLocaleString();
+      document.getElementById('unique-failed').textContent = stats.uniqueFailed.toLocaleString();
+      document.getElementById('success-rate').textContent = stats.successRate + '%';
+      document.getElementById('failed-rate').textContent = (100 - parseFloat(stats.successRate)).toFixed(1) + '%';
+      document.getElementById('success-badge').textContent = stats.uniqueSuccess;
+      document.getElementById('failed-badge').textContent = stats.uniqueFailed;
+      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
     }
 
-    // Add log to display
+    // Update server time
+    function updateServerTime() {
+      document.getElementById('server-time').textContent = new Date().toLocaleTimeString();
+    }
+    setInterval(updateServerTime, 1000);
+
+    // Add log
     function addLog(log) {
       logs.unshift(log);
       
-      // Keep only last 200 logs in memory
-      if (logs.length > 200) {
-        logs = logs.slice(0, 200);
+      // Keep only last 100 logs
+      if (logs.length > 100) {
+        logs.pop();
       }
       
-      // Filter based on current tab
-      let filteredLogs = logs;
-      if (currentTab === 'success-logs') {
-        filteredLogs = logs.filter(l => l.type === 'success');
-      } else if (currentTab === 'error-logs') {
-        filteredLogs = logs.filter(l => l.type === 'error');
-      }
+      const logItem = document.createElement('div');
+      logItem.className = \`log-item \${log.type}\`;
+      logItem.innerHTML = \`
+        <div class="log-time">\${log.time}</div>
+        <div class="log-message">\${log.message}</div>
+      \`;
       
-      // Update log display
-      logBox.innerHTML = filteredLogs.map(log => \`
-        <div class="log-item \${log.type}">
-          <div class="log-time">\${new Date(log.time).toLocaleTimeString()}</div>
-          <div class="log-message">\${log.message}</div>
-        </div>
-      \`).join('');
+      // Insert at the top (but since we use column-reverse, we append)
+      logContent.appendChild(logItem);
       
       // Auto-scroll
-      logBox.scrollTop = 0;
+      logContent.scrollTop = 0;
     }
 
-    // Update URL lists
-    function updateUrlLists(data) {
-      statsData = {
-        ...statsData,
-        ...data
-      };
+    // Update URL list
+    function updateUrlList() {
+      const urls = currentUrlTab === 'success' ? successUrls : failedUrls;
       
-      updateStatsDisplay();
-      
-      // Show appropriate URL list based on current tab
-      if (currentUrlTab === 'success-urls') {
-        const urls = data.successUrls || [];
-        urlList.innerHTML = urls.map(url => \`
-          <div class="url-item success">
-            <div class="url-time">Last Checked: \${new Date().toLocaleTimeString()}</div>
-            <div class="url-text">\${url}</div>
+      if (urls.length === 0) {
+        urlList.innerHTML = \`
+          <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
+            <div class="url-text">No \${currentUrlTab === 'success' ? 'successful' : 'failed'} URLs yet...</div>
+            <div class="url-meta">
+              <span>Status: Waiting for data</span>
+            </div>
           </div>
-        \`).join('');
-      } else {
-        const urls = data.failedUrls || [];
-        urlList.innerHTML = urls.map(url => \`
-          <div class="url-item fail">
-            <div class="url-time">Last Checked: \${new Date().toLocaleTimeString()}</div>
-            <div class="url-text">\${url}</div>
-          </div>
-        \`).join('');
+        \`;
+        return;
       }
-    }
-
-    // Tab switching
-    function switchTab(tabName) {
-      currentTab = tabName;
-      document.querySelectorAll('.tabs .tab').forEach(tab => {
-        tab.classList.remove('active');
-      });
-      event.target.classList.add('active');
       
-      // Refresh logs display
-      if (logs.length > 0) {
-        const filteredLogs = tabName === 'all-logs' ? logs :
-                           tabName === 'success-logs' ? logs.filter(l => l.type === 'success') :
-                           logs.filter(l => l.type === 'error');
-        
-        logBox.innerHTML = filteredLogs.map(log => \`
-          <div class="log-item \${log.type}">
-            <div class="log-time">\${new Date(log.time).toLocaleTimeString()}</div>
-            <div class="log-message">\${log.message}</div>
+      urlList.innerHTML = urls.map(url => \`
+        <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
+          <div class="url-text">\${url.url}</div>
+          <div class="url-meta">
+            <span>Count: \${url.count}</span>
+            <span>\${url.time}</span>
           </div>
-        \`).join('');
-      }
+        </div>
+      \`).join('');
     }
 
-    function switchUrlTab(tabName) {
-      currentUrlTab = tabName;
-      document.querySelectorAll('.url-panel .tabs .tab').forEach(tab => {
-        tab.classList.remove('active');
-      });
-      event.target.classList.add('active');
+    // Switch URL tab
+    function switchUrlTab(tab) {
+      currentUrlTab = tab;
       
-      // Trigger update with current data
-      updateUrlLists(statsData);
+      // Update active tab
+      document.querySelectorAll('.url-tab').forEach(el => {
+        el.classList.remove('active');
+      });
+      
+      const activeTab = tab === 'success' 
+        ? document.querySelector('.url-tab:first-child')
+        : document.querySelector('.url-tab:last-child');
+      
+      activeTab.classList.add('active');
+      
+      // Update URL list
+      updateUrlList();
     }
 
-    // Clear logs function
+    // Clear logs
     function clearLogs() {
       logs = [];
-      logBox.innerHTML = '<div class="log-item info"><div class="log-message">Logs cleared</div></div>';
+      logContent.innerHTML = \`
+        <div class="log-item info">
+          <div class="log-time">System</div>
+          <div class="log-message">Logs cleared at \${new Date().toLocaleTimeString()}</div>
+        </div>
+      \`;
     }
 
+    // Refresh stats
     function refreshStats() {
-      // This would trigger a stats refresh from server if needed
-      fetch('/stats').then(r => r.json()).then(updateUrlLists);
+      fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+          stats = data;
+          updateStats();
+        });
     }
 
-    // Event Source Listener
+    // Get recent URLs
+    function getRecentUrls() {
+      fetch('/api/recent-urls')
+        .then(r => r.json())
+        .then(data => {
+          successUrls = data.success || [];
+          failedUrls = data.failed || [];
+          updateUrlList();
+        });
+    }
+
+    // Event Source handling
     evt.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         
-        if (data.type === 'stats') {
-          updateUrlLists(data.data);
-        } else {
-          addLog(data);
+        switch(data.type) {
+          case 'stats':
+            stats = data.data;
+            updateStats();
+            break;
+            
+          case 'urlUpdate':
+            // Add to appropriate list
+            const urlData = {
+              url: data.data.url,
+              time: data.data.time,
+              count: 1
+            };
+            
+            if (data.data.type === 'success') {
+              const existing = successUrls.find(u => u.url === data.data.url);
+              if (existing) {
+                existing.count++;
+                existing.time = data.data.time;
+              } else {
+                successUrls.unshift(urlData);
+                // Keep only 50 most recent
+                if (successUrls.length > 50) successUrls.pop();
+              }
+            } else {
+              const existing = failedUrls.find(u => u.url === data.data.url);
+              if (existing) {
+                existing.count++;
+                existing.time = data.data.time;
+              } else {
+                failedUrls.unshift(urlData);
+                // Keep only 50 most recent
+                if (failedUrls.length > 50) failedUrls.pop();
+              }
+            }
+            
+            if (currentUrlTab === data.data.type) {
+              updateUrlList();
+            }
+            break;
+            
+          default:
+            addLog(data);
+            break;
         }
       } catch (err) {
-        console.error('Error parsing SSE data:', err);
+        console.error('Error parsing SSE:', err);
       }
     };
 
-    evt.onerror = (err) => {
-      console.error('SSE Error:', err);
+    evt.onerror = () => {
       addLog({
-        id: Date.now(),
-        time: new Date().toISOString(),
-        message: '❌ Connection lost, attempting to reconnect...',
+        time: new Date().toLocaleTimeString(),
+        message: '⚠️ Connection error, attempting to reconnect...',
         type: 'error'
       });
     };
 
-    // Initial display
-    addLog({
-      id: Date.now(),
-      time: new Date().toISOString(),
-      message: '🚀 Dashboard initialized and ready',
-      type: 'info'
-    });
+    // Initial setup
+    updateStats();
+    updateServerTime();
+    
+    // Load initial data
+    fetch('/api/initial-data')
+      .then(r => r.json())
+      .then(data => {
+        stats = data.stats;
+        successUrls = data.successUrls || [];
+        failedUrls = data.failedUrls || [];
+        updateStats();
+        updateUrlList();
+      });
   </script>
 </body>
 </html>
   `);
 });
 
-// ======================== STATS ENDPOINT ===========================
-app.get("/stats", (req, res) => {
+// ======================== API ENDPOINTS ===========================
+app.get("/api/stats", (req, res) => {
   res.json({
-    totalHits: stats.totalHits,
-    success: stats.success,
-    failed: stats.failed,
+    ...stats,
+    successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
     uniqueSuccess: successUrls.size,
-    uniqueFailed: failedUrls.size,
-    successUrls: Array.from(successUrls).slice(-50),
-    failedUrls: Array.from(failedUrls).slice(-50),
-    lastUpdate: stats.lastUpdate
+    uniqueFailed: failedUrls.size
+  });
+});
+
+app.get("/api/recent-urls", (req, res) => {
+  const successArray = Array.from(successUrls.entries()).slice(0, 50).map(([url, data]) => ({
+    url,
+    count: data.count,
+    time: new Date(data.lastSeen).toLocaleTimeString()
+  }));
+  
+  const failedArray = Array.from(failedUrls.entries()).slice(0, 50).map(([url, data]) => ({
+    url,
+    count: data.count,
+    time: new Date(data.lastSeen).toLocaleTimeString()
+  }));
+  
+  res.json({
+    success: successArray,
+    failed: failedArray
+  });
+});
+
+app.get("/api/initial-data", (req, res) => {
+  const successArray = Array.from(successUrls.entries()).slice(0, 50).map(([url, data]) => ({
+    url,
+    count: data.count,
+    time: new Date(data.lastSeen).toLocaleTimeString()
+  }));
+  
+  const failedArray = Array.from(failedUrls.entries()).slice(0, 50).map(([url, data]) => ({
+    url,
+    count: data.count,
+    time: new Date(data.lastSeen).toLocaleTimeString()
+  }));
+  
+  res.json({
+    stats: {
+      ...stats,
+      successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
+      uniqueSuccess: successUrls.size,
+      uniqueFailed: failedUrls.size
+    },
+    successUrls: successArray,
+    failedUrls: failedArray
   });
 });
 
@@ -849,15 +1007,17 @@ app.get("/stream", (req, res) => {
     type: "stats",
     data: {
       ...stats,
-      successUrls: Array.from(successUrls).slice(-50),
-      failedUrls: Array.from(failedUrls).slice(-50),
+      successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
       uniqueSuccess: successUrls.size,
       uniqueFailed: failedUrls.size
     }
   })}\n\n`);
 
   req.on("close", () => {
-    clients.splice(clients.indexOf(client), 1);
+    const index = clients.indexOf(client);
+    if (index > -1) {
+      clients.splice(index, 1);
+    }
   });
 });
 
