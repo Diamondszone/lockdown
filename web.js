@@ -138,7 +138,7 @@ async function hitUrl(url) {
       lastSeen: new Date().toISOString()
     });
     failedUrls.delete(url);
-    broadcastLog(`✅ Success: ${url}`, "success", url);
+    broadcastLog(`✅ Direct Success: ${url}`, "success", url);
     broadcastUrlUpdate("success", url);
     broadcastStats();
     return { success: true, method: "direct", url };
@@ -154,7 +154,7 @@ async function hitUrl(url) {
       lastSeen: new Date().toISOString()
     });
     failedUrls.delete(url);
-    broadcastLog(`✅ Success (via Proxy): ${url}`, "success", url);
+    broadcastLog(`✅ Proxy Success: ${url}`, "success", url);
     broadcastUrlUpdate("success", url);
     broadcastStats();
     return { success: true, method: "proxy", url };
@@ -197,7 +197,6 @@ async function mainLoop() {
       async function worker() {
         while (true) {
           const batch = [];
-          const batchUrls = [];
 
           for (let i = 0; i < MAX_PARALLEL; i++) {
             if (current >= urls.length) break;
@@ -205,7 +204,6 @@ async function mainLoop() {
             if (!u || processedUrls.has(u)) continue;
             
             processedUrls.add(u);
-            batchUrls.push(u);
             batch.push(hitUrl(u));
           }
 
@@ -246,13 +244,14 @@ app.get("/", (req, res) => {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     body {
       background: #0f172a;
       color: #f8fafc;
       min-height: 100vh;
+      overflow-x: hidden;
     }
 
     .container {
@@ -263,92 +262,111 @@ app.get("/", (req, res) => {
 
     /* Header */
     header {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 24px;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border-radius: 16px;
+      padding: 24px 32px;
       margin-bottom: 24px;
       border: 1px solid #334155;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 
     .header-title {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
+      gap: 16px;
+      margin-bottom: 12px;
     }
 
     .header-title h1 {
-      font-size: 28px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      font-size: 32px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
     }
 
     .header-title i {
-      font-size: 32px;
-      color: #3b82f6;
+      font-size: 36px;
+      color: #60a5fa;
+      filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.5));
     }
 
     .header-subtitle {
       color: #94a3b8;
-      font-size: 14px;
-      margin-bottom: 24px;
+      font-size: 15px;
+      margin-bottom: 32px;
     }
 
     /* Stats Grid */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
     }
 
     .stat-card {
-      background: #1e293b;
-      border-radius: 10px;
-      padding: 20px;
+      background: rgba(30, 41, 59, 0.8);
+      border-radius: 14px;
+      padding: 24px;
       border: 1px solid #334155;
-      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #60a5fa, #a78bfa);
     }
 
     .stat-card:hover {
-      border-color: #3b82f6;
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+      transform: translateY(-5px);
+      border-color: #60a5fa;
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
     }
 
     .stat-label {
-      font-size: 12px;
+      font-size: 13px;
       color: #94a3b8;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 8px;
+      letter-spacing: 1.2px;
+      margin-bottom: 12px;
+      font-weight: 600;
     }
 
     .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-      margin-bottom: 4px;
+      font-size: 42px;
+      font-weight: 900;
+      margin-bottom: 8px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     }
 
-    .stat-success { color: #10b981; }
-    .stat-failed { color: #ef4444; }
-    .stat-total { color: #3b82f6; }
-    .stat-unique { color: #8b5cf6; }
+    .stat-success { color: #34d399; }
+    .stat-failed { color: #f87171; }
+    .stat-total { color: #60a5fa; }
+    .stat-unique { color: #a78bfa; }
 
     .stat-detail {
-      font-size: 12px;
+      font-size: 13px;
       color: #64748b;
+      font-weight: 500;
     }
 
     /* Main Content */
     .main-content {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      height: 60vh;
+      gap: 28px;
+      height: 65vh;
+      margin-bottom: 32px;
     }
 
     @media (max-width: 1024px) {
@@ -360,17 +378,19 @@ app.get("/", (req, res) => {
 
     /* Panel */
     .panel {
-      background: #1e293b;
-      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.8);
+      border-radius: 16px;
       border: 1px solid #334155;
+      backdrop-filter: blur(10px);
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
 
     .panel-header {
-      padding: 16px 20px;
-      background: rgba(30, 41, 59, 0.9);
+      padding: 20px 24px;
+      background: rgba(15, 23, 42, 0.9);
       border-bottom: 1px solid #334155;
       display: flex;
       justify-content: space-between;
@@ -378,47 +398,52 @@ app.get("/", (req, res) => {
     }
 
     .panel-title {
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 20px;
+      font-weight: 700;
       color: #e2e8f0;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
     }
 
     .panel-actions {
       display: flex;
-      gap: 8px;
+      gap: 12px;
     }
 
     .btn {
-      padding: 8px 16px;
-      border-radius: 6px;
+      padding: 10px 20px;
+      border-radius: 10px;
       border: 1px solid #475569;
-      background: #334155;
+      background: linear-gradient(135deg, #334155, #1e293b);
       color: #e2e8f0;
       cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
+      font-size: 14px;
+      font-weight: 600;
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
 
     .btn:hover {
-      background: #475569;
+      background: linear-gradient(135deg, #475569, #334155);
       border-color: #64748b;
+      transform: scale(1.05);
+    }
+
+    .btn:active {
+      transform: scale(0.95);
     }
 
     .btn-clear {
-      background: #dc2626;
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
       border-color: #ef4444;
       color: white;
     }
 
     .btn-clear:hover {
-      background: #ef4444;
+      background: linear-gradient(135deg, #ef4444, #dc2626);
       border-color: #f87171;
     }
 
@@ -429,58 +454,62 @@ app.get("/", (req, res) => {
 
     .log-content {
       flex: 1;
-      padding: 16px;
+      padding: 0;
       overflow-y: auto;
       display: flex;
-      flex-direction: column-reverse;
+      flex-direction: column;
     }
 
     .log-item {
-      padding: 12px;
-      margin-bottom: 8px;
-      border-radius: 8px;
-      background: rgba(30, 41, 59, 0.7);
-      border-left: 4px solid;
-      font-size: 13px;
-      line-height: 1.4;
-      animation: slideIn 0.3s ease;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      font-size: 14px;
+      line-height: 1.5;
+      animation: fadeIn 0.5s ease-out;
+      transition: all 0.2s ease;
     }
 
-    @keyframes slideIn {
+    .log-item:hover {
+      background: rgba(30, 41, 59, 0.5);
+    }
+
+    @keyframes fadeIn {
       from {
         opacity: 0;
-        transform: translateX(-10px);
+        transform: translateY(-10px);
       }
       to {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateY(0);
       }
     }
 
     .log-item.info {
-      border-left-color: #3b82f6;
-      color: #93c5fd;
+      border-left: 4px solid #60a5fa;
+      background: rgba(96, 165, 250, 0.05);
     }
 
     .log-item.success {
-      border-left-color: #10b981;
-      color: #a7f3d0;
+      border-left: 4px solid #34d399;
+      background: rgba(52, 211, 153, 0.05);
     }
 
     .log-item.error {
-      border-left-color: #ef4444;
-      color: #fca5a5;
+      border-left: 4px solid #f87171;
+      background: rgba(248, 113, 113, 0.05);
     }
 
     .log-time {
-      font-size: 11px;
-      color: #64748b;
+      font-size: 12px;
+      color: #94a3b8;
       margin-bottom: 4px;
       font-family: 'Courier New', monospace;
+      font-weight: 500;
     }
 
     .log-message {
       word-break: break-all;
+      color: #f1f5f9;
     }
 
     /* URL Panel */
@@ -490,119 +519,154 @@ app.get("/", (req, res) => {
 
     .url-tabs {
       display: flex;
-      background: #0f172a;
+      background: rgba(15, 23, 42, 0.9);
       border-bottom: 1px solid #334155;
     }
 
     .url-tab {
       flex: 1;
-      padding: 12px 16px;
+      padding: 16px 20px;
       text-align: center;
       cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
+      font-size: 15px;
+      font-weight: 600;
       color: #94a3b8;
       transition: all 0.2s ease;
-      border-bottom: 2px solid transparent;
+      border-bottom: 3px solid transparent;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
     }
 
     .url-tab:hover {
       background: rgba(30, 41, 59, 0.5);
+      color: #e2e8f0;
     }
 
     .url-tab.active {
-      color: #3b82f6;
-      border-bottom-color: #3b82f6;
+      color: #60a5fa;
+      border-bottom-color: #60a5fa;
       background: rgba(30, 41, 59, 0.8);
     }
 
     .badge {
       background: #475569;
       color: #f8fafc;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      min-width: 28px;
     }
 
     .url-content {
       flex: 1;
-      padding: 16px;
+      padding: 0;
       overflow-y: auto;
     }
 
     .url-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
     }
 
     .url-item {
-      padding: 12px;
-      border-radius: 8px;
-      background: rgba(30, 41, 59, 0.7);
-      border: 1px solid #334155;
-      font-size: 12px;
-      line-height: 1.4;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      font-size: 13px;
+      line-height: 1.5;
       transition: all 0.2s ease;
     }
 
     .url-item:hover {
-      border-color: #475569;
-      background: rgba(30, 41, 59, 0.9);
+      background: rgba(30, 41, 59, 0.5);
     }
 
     .url-item.success {
-      border-left: 4px solid #10b981;
+      border-left: 4px solid #34d399;
+      background: rgba(52, 211, 153, 0.05);
     }
 
     .url-item.failed {
-      border-left: 4px solid #ef4444;
+      border-left: 4px solid #f87171;
+      background: rgba(248, 113, 113, 0.05);
     }
 
     .url-text {
       word-break: break-all;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      color: #f1f5f9;
+      font-weight: 500;
     }
 
     .url-meta {
-      font-size: 11px;
-      color: #64748b;
+      font-size: 12px;
+      color: #94a3b8;
       display: flex;
       justify-content: space-between;
+      font-weight: 500;
     }
 
     /* Scrollbar */
     ::-webkit-scrollbar {
-      width: 8px;
+      width: 10px;
     }
 
     ::-webkit-scrollbar-track {
-      background: #1e293b;
-      border-radius: 4px;
+      background: rgba(30, 41, 59, 0.5);
+      border-radius: 5px;
     }
 
     ::-webkit-scrollbar-thumb {
-      background: #475569;
-      border-radius: 4px;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      border-radius: 5px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: #64748b;
+      background: linear-gradient(135deg, #a78bfa, #60a5fa);
     }
 
     /* Footer */
     footer {
-      margin-top: 24px;
       text-align: center;
       color: #64748b;
-      font-size: 12px;
-      padding: 16px;
+      font-size: 13px;
+      padding: 20px;
       border-top: 1px solid #334155;
+      margin-top: 20px;
+    }
+
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #34d399;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #94a3b8;
+    }
+
+    .empty-state i {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
     }
   </style>
 </head>
@@ -610,7 +674,7 @@ app.get("/", (req, res) => {
   <div class="container">
     <header>
       <div class="header-title">
-        <i>🔍</i>
+        <i>⚡</i>
         <h1>JSON Checker Dashboard</h1>
       </div>
       <div class="header-subtitle">
@@ -621,23 +685,23 @@ app.get("/", (req, res) => {
         <div class="stat-card">
           <div class="stat-label">Total Hits</div>
           <div class="stat-value stat-total" id="total-hits">0</div>
-          <div class="stat-detail">Total requests made</div>
+          <div class="stat-detail">Total requests processed</div>
         </div>
         
         <div class="stat-card">
-          <div class="stat-label">Success</div>
-          <div class="stat-value stat-success" id="success-count">0</div>
-          <div class="stat-detail"><span id="success-rate">0%</span> success rate</div>
+          <div class="stat-label">Success Rate</div>
+          <div class="stat-value stat-success" id="success-rate">0%</div>
+          <div class="stat-detail"><span id="success-count">0</span> successful hits</div>
         </div>
         
         <div class="stat-card">
-          <div class="stat-label">Failed</div>
-          <div class="stat-value stat-failed" id="failed-count">0</div>
-          <div class="stat-detail"><span id="failed-rate">0%</span> failure rate</div>
+          <div class="stat-label">Failure Rate</div>
+          <div class="stat-value stat-failed" id="failure-rate">0%</div>
+          <div class="stat-detail"><span id="failed-count">0</span> failed hits</div>
         </div>
         
         <div class="stat-card">
-          <div class="stat-label">Unique URLs</div>
+          <div class="stat-label">Active URLs</div>
           <div class="stat-value stat-unique" id="unique-urls">0</div>
           <div class="stat-detail"><span id="unique-success">0</span> success / <span id="unique-failed">0</span> failed</div>
         </div>
@@ -651,18 +715,23 @@ app.get("/", (req, res) => {
           <div class="panel-title">
             <i>📋</i>
             Real-time Logs
+            <div class="status-indicator">
+              <div class="status-dot"></div>
+              <span>Live</span>
+            </div>
           </div>
           <div class="panel-actions">
-            <button class="btn" onclick="clearLogs()">
+            <button class="btn btn-clear" onclick="clearLogs()">
               <i>🗑️</i>
               Clear Logs
             </button>
           </div>
         </div>
         <div class="log-content" id="log-content">
-          <div class="log-item info">
-            <div class="log-time">System</div>
-            <div class="log-message">Dashboard initialized. Waiting for logs...</div>
+          <div class="empty-state" id="empty-logs">
+            <i>📝</i>
+            <div>Waiting for logs...</div>
+            <div style="font-size: 12px; margin-top: 8px;">Logs will appear here in real-time</div>
           </div>
         </div>
       </div>
@@ -672,7 +741,7 @@ app.get("/", (req, res) => {
         <div class="panel-header">
           <div class="panel-title">
             <i>🔗</i>
-            URL Status
+            URL Status Monitor
           </div>
           <div class="panel-actions">
             <button class="btn" onclick="refreshStats()">
@@ -695,11 +764,10 @@ app.get("/", (req, res) => {
         
         <div class="url-content">
           <div class="url-list" id="url-list">
-            <div class="url-item success">
-              <div class="url-text">No data yet...</div>
-              <div class="url-meta">
-                <span>Status: Waiting</span>
-              </div>
+            <div class="empty-state">
+              <i>🔍</i>
+              <div>No URLs monitored yet</div>
+              <div style="font-size: 12px; margin-top: 8px;">URLs will appear here as they are checked</div>
             </div>
           </div>
         </div>
@@ -707,7 +775,14 @@ app.get("/", (req, res) => {
     </main>
 
     <footer>
-      <p>Last Updated: <span id="last-updated">-</span> | Server Time: <span id="server-time">-</span></p>
+      <p>
+        <span class="status-indicator">
+          <div class="status-dot"></div>
+          <span>System Status: <strong>Active</strong></span>
+        </span>
+        | Last Updated: <span id="last-updated">-</span>
+        | Server Time: <span id="server-time">-</span>
+      </p>
     </footer>
   </div>
 
@@ -734,11 +809,11 @@ app.get("/", (req, res) => {
       document.getElementById('total-hits').textContent = stats.totalHits.toLocaleString();
       document.getElementById('success-count').textContent = stats.success.toLocaleString();
       document.getElementById('failed-count').textContent = stats.failed.toLocaleString();
+      document.getElementById('success-rate').textContent = stats.successRate + '%';
+      document.getElementById('failure-rate').textContent = (100 - parseFloat(stats.successRate)).toFixed(1) + '%';
       document.getElementById('unique-urls').textContent = (stats.uniqueSuccess + stats.uniqueFailed).toLocaleString();
       document.getElementById('unique-success').textContent = stats.uniqueSuccess.toLocaleString();
       document.getElementById('unique-failed').textContent = stats.uniqueFailed.toLocaleString();
-      document.getElementById('success-rate').textContent = stats.successRate + '%';
-      document.getElementById('failed-rate').textContent = (100 - parseFloat(stats.successRate)).toFixed(1) + '%';
       document.getElementById('success-badge').textContent = stats.uniqueSuccess;
       document.getElementById('failed-badge').textContent = stats.uniqueFailed;
       document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
@@ -750,14 +825,11 @@ app.get("/", (req, res) => {
     }
     setInterval(updateServerTime, 1000);
 
-    // Add log
+    // Add log to the TOP (newest first)
     function addLog(log) {
-      logs.unshift(log);
-      
-      // Keep only last 100 logs
-      if (logs.length > 100) {
-        logs.pop();
-      }
+      // Remove empty state if it exists
+      const emptyLogs = document.getElementById('empty-logs');
+      if (emptyLogs) emptyLogs.remove();
       
       const logItem = document.createElement('div');
       logItem.className = \`log-item \${log.type}\`;
@@ -766,11 +838,27 @@ app.get("/", (req, res) => {
         <div class="log-message">\${log.message}</div>
       \`;
       
-      // Insert at the top (but since we use column-reverse, we append)
-      logContent.appendChild(logItem);
+      // Insert at the TOP of log content
+      if (logContent.firstChild) {
+        logContent.insertBefore(logItem, logContent.firstChild);
+      } else {
+        logContent.appendChild(logItem);
+      }
       
-      // Auto-scroll
-      logContent.scrollTop = 0;
+      logs.unshift(log);
+      
+      // Keep only last 100 logs in memory
+      if (logs.length > 100) {
+        logs = logs.slice(0, 100);
+      }
+      
+      // Remove old logs from DOM if there are too many
+      const logItems = logContent.querySelectorAll('.log-item');
+      if (logItems.length > 100) {
+        for (let i = 100; i < logItems.length; i++) {
+          logItems[i].remove();
+        }
+      }
     }
 
     // Update URL list
@@ -779,11 +867,10 @@ app.get("/", (req, res) => {
       
       if (urls.length === 0) {
         urlList.innerHTML = \`
-          <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
-            <div class="url-text">No \${currentUrlTab === 'success' ? 'successful' : 'failed'} URLs yet...</div>
-            <div class="url-meta">
-              <span>Status: Waiting for data</span>
-            </div>
+          <div class="empty-state">
+            <i>\${currentUrlTab === 'success' ? '✅' : '❌'}</i>
+            <div>No \${currentUrlTab === 'success' ? 'successful' : 'failed'} URLs yet</div>
+            <div style="font-size: 12px; margin-top: 8px;">URLs will appear here as they are processed</div>
           </div>
         \`;
         return;
@@ -793,8 +880,8 @@ app.get("/", (req, res) => {
         <div class="url-item \${currentUrlTab === 'success' ? 'success' : 'failed'}">
           <div class="url-text">\${url.url}</div>
           <div class="url-meta">
-            <span>Count: \${url.count}</span>
-            <span>\${url.time}</span>
+            <span>Hits: \${url.count}</span>
+            <span>Last: \${url.time}</span>
           </div>
         </div>
       \`).join('');
@@ -815,7 +902,6 @@ app.get("/", (req, res) => {
       
       activeTab.classList.add('active');
       
-      // Update URL list
       updateUrlList();
     }
 
@@ -823,9 +909,10 @@ app.get("/", (req, res) => {
     function clearLogs() {
       logs = [];
       logContent.innerHTML = \`
-        <div class="log-item info">
-          <div class="log-time">System</div>
-          <div class="log-message">Logs cleared at \${new Date().toLocaleTimeString()}</div>
+        <div class="empty-state" id="empty-logs">
+          <i>📝</i>
+          <div>Logs cleared</div>
+          <div style="font-size: 12px; margin-top: 8px;">Waiting for new logs...</div>
         </div>
       \`;
     }
@@ -838,10 +925,7 @@ app.get("/", (req, res) => {
           stats = data;
           updateStats();
         });
-    }
-
-    // Get recent URLs
-    function getRecentUrls() {
+      
       fetch('/api/recent-urls')
         .then(r => r.json())
         .then(data => {
@@ -909,7 +993,7 @@ app.get("/", (req, res) => {
     evt.onerror = () => {
       addLog({
         time: new Date().toLocaleTimeString(),
-        message: '⚠️ Connection error, attempting to reconnect...',
+        message: '⚠️ Connection lost, attempting to reconnect...',
         type: 'error'
       });
     };
@@ -945,17 +1029,21 @@ app.get("/api/stats", (req, res) => {
 });
 
 app.get("/api/recent-urls", (req, res) => {
-  const successArray = Array.from(successUrls.entries()).slice(0, 50).map(([url, data]) => ({
-    url,
-    count: data.count,
-    time: new Date(data.lastSeen).toLocaleTimeString()
-  }));
+  const successArray = Array.from(successUrls.entries())
+    .slice(0, 50)
+    .map(([url, data]) => ({
+      url,
+      count: data.count,
+      time: new Date(data.lastSeen).toLocaleTimeString()
+    }));
   
-  const failedArray = Array.from(failedUrls.entries()).slice(0, 50).map(([url, data]) => ({
-    url,
-    count: data.count,
-    time: new Date(data.lastSeen).toLocaleTimeString()
-  }));
+  const failedArray = Array.from(failedUrls.entries())
+    .slice(0, 50)
+    .map(([url, data]) => ({
+      url,
+      count: data.count,
+      time: new Date(data.lastSeen).toLocaleTimeString()
+    }));
   
   res.json({
     success: successArray,
@@ -964,17 +1052,21 @@ app.get("/api/recent-urls", (req, res) => {
 });
 
 app.get("/api/initial-data", (req, res) => {
-  const successArray = Array.from(successUrls.entries()).slice(0, 50).map(([url, data]) => ({
-    url,
-    count: data.count,
-    time: new Date(data.lastSeen).toLocaleTimeString()
-  }));
+  const successArray = Array.from(successUrls.entries())
+    .slice(0, 50)
+    .map(([url, data]) => ({
+      url,
+      count: data.count,
+      time: new Date(data.lastSeen).toLocaleTimeString()
+    }));
   
-  const failedArray = Array.from(failedUrls.entries()).slice(0, 50).map(([url, data]) => ({
-    url,
-    count: data.count,
-    time: new Date(data.lastSeen).toLocaleTimeString()
-  }));
+  const failedArray = Array.from(failedUrls.entries())
+    .slice(0, 50)
+    .map(([url, data]) => ({
+      url,
+      count: data.count,
+      time: new Date(data.lastSeen).toLocaleTimeString()
+    }));
   
   res.json({
     stats: {
@@ -1025,7 +1117,7 @@ app.get("/stream", (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  broadcastLog(`🌐 Dashboard aktif di port ${PORT}`, "info");
+  broadcastLog(`🌐 Dashboard started on port ${PORT}`, "info");
 });
 
 // Start main loop
