@@ -158,37 +158,182 @@ const app = express();
 
 app.get("/", (req, res) => {
   res.send(`
-  <html>
-  <head>
-    <title>Realtime JSON Checker Dashboard</title>
-    <style>
-      body { font-family: Arial; background: #111; color:#eee; padding:20px; }
-      h1 { color:#4de34d; }
-      pre {
-        white-space: pre-wrap; background:#000;
-        padding:20px; border-radius:8px;
-        height:85vh; overflow-y:scroll;
-        font-size:14px; line-height:1.4;
-      }
-    </style>
-  </head>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Realtime JSON Checker Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 
-  <body>
-    <h1>🔍 JSON CHECKER (Realtime)</h1>
-    <pre id="log"></pre>
+  <style>
+    body {
+      margin:0;
+      background:#0d0d0f;
+      font-family: 'Segoe UI', sans-serif;
+      color:#e5e5e5;
+    }
 
-    <script>
-      const logBox = document.getElementById("log");
-      const evt = new EventSource("/stream");
+    /* HEADER */
+    .header {
+      background: linear-gradient(135deg, #111, #1a1a1d, #111);
+      padding:20px 30px;
+      box-shadow: 0 0 25px rgba(0,255,170,0.15);
+      border-bottom:1px solid #222;
+      position:sticky;
+      top:0;
+      z-index:20;
+    }
 
-      evt.onmessage = function(e) {
-        logBox.textContent = e.data + "\\n" + logBox.textContent;
-      };
-    </script>
-  </body>
-  </html>
+    .title {
+      font-size:28px;
+      font-weight:700;
+      color:#56f7c4;
+      text-shadow: 0 0 10px rgba(86,247,196,0.4);
+    }
+
+    .sub {
+      font-size:14px;
+      margin-top:4px;
+      color:#999;
+    }
+
+    /* INFO BAR */
+    .stats {
+      display:flex;
+      gap:25px;
+      margin-top:15px;
+    }
+
+    .stat-box {
+      padding:12px 18px;
+      background:#141416;
+      border:1px solid #222;
+      border-radius:10px;
+      box-shadow:0 0 10px rgba(0,255,170,0.05);
+    }
+    .stat-num {
+      font-size:20px;
+      color:#56f7c4;
+      font-weight:700;
+    }
+
+    /* CLEAR BUTTON */
+    .clear-btn {
+      margin-left:auto;
+      padding:10px 20px;
+      background:#222;
+      border:1px solid #333;
+      border-radius:8px;
+      color:#eee;
+      cursor:pointer;
+      font-size:14px;
+      transition:0.2s;
+    }
+    .clear-btn:hover {
+      background:#333;
+    }
+
+    /* LOG AREA */
+    .log-box {
+      height: calc(100vh - 160px);
+      margin:20px;
+      background:#000;
+      border:1px solid #202020;
+      border-radius:12px;
+      padding:20px;
+      font-family: monospace;
+      font-size:14px;
+      overflow-y:scroll;
+      box-shadow: inset 0 0 25px rgba(0,255,170,0.05);
+      line-height:1.5;
+    }
+
+    .log-line {
+      margin-bottom:4px;
+      padding-bottom:4px;
+      border-bottom:1px dashed #151515;
+    }
+
+    .green { color:#4dfaad; }
+    .yellow { color:#ffe77a; }
+    .red { color:#ff6a6a; }
+  </style>
+</head>
+
+<body>
+
+  <div class="header">
+    <div class="title">🔍 JSON Checker — Realtime Dashboard</div>
+    <div class="sub">Monitoring & Diagnostik Realtime</div>
+
+    <div class="stats">
+      <div class="stat-box">
+        Success: <span class="stat-num" id="s-success">0</span>
+      </div>
+      <div class="stat-box">
+        Failed: <span class="stat-num" id="s-fail">0</span>
+      </div>
+      <div class="stat-box">
+        Total Hit: <span class="stat-num" id="s-total">0</span>
+      </div>
+
+      <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+    </div>
+  </div>
+
+  <div class="log-box" id="log"></div>
+
+  <script>
+    const logBox = document.getElementById("log");
+    const evt = new EventSource("/stream");
+
+    let success = 0;
+    let fail = 0;
+    let total = 0;
+
+    evt.onmessage = (e) => {
+      const text = e.data;
+
+      // Hit Counter
+      total++;
+      document.getElementById("s-total").innerText = total;
+
+      if (text.includes("Direct OK") || text.includes("Proxy OK"))
+        success++;
+      if (text.includes("BUKAN JSON"))
+        fail++;
+
+      document.getElementById("s-success").innerText = success;
+      document.getElementById("s-fail").innerText = fail;
+
+      // warna log
+      let cls = "yellow";
+      if (text.includes("OK")) cls = "green";
+      if (text.includes("BUKAN")) cls = "red";
+
+      const div = document.createElement("div");
+      div.className = "log-line " + cls;
+      div.textContent = text;
+
+      logBox.appendChild(div);
+
+      // auto scroll bottom
+      logBox.scrollTop = logBox.scrollHeight;
+    };
+
+    function clearLog() {
+      logBox.innerHTML = "";
+      success = fail = total = 0;
+      document.getElementById("s-success").innerText = 0;
+      document.getElementById("s-fail").innerText = 0;
+      document.getElementById("s-total").innerText = 0;
+    }
+  </script>
+
+</body>
+</html>
   `);
 });
+
 
 // ======================== SSE STREAM ===========================
 app.get("/stream", (req, res) => {
@@ -215,3 +360,4 @@ app.listen(process.env.PORT || 3000, () =>
 );
 
 mainLoop();
+
