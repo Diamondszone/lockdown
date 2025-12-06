@@ -232,7 +232,7 @@ app.get("/", (req, res) => {
       position: relative;
     }
 
-    /* NEON PURPLE METRIC RAIN - FIXED */
+    /* ==== DIGITAL MATRIX RAIN EFFECT (PERBAIKAN) ==== */
     .metric-rain {
       position: fixed;
       top: 0;
@@ -242,37 +242,96 @@ app.get("/", (req, res) => {
       pointer-events: none;
       z-index: -1;
       overflow: hidden;
+      background: linear-gradient(to bottom, 
+        rgba(10, 10, 20, 0.1) 0%,
+        rgba(168, 85, 247, 0.05) 50%,
+        rgba(10, 10, 20, 0.1) 100%);
+    }
+
+    .metric-column {
+      position: absolute;
+      top: -100px;
+      width: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      animation: matrixFall linear infinite;
+      opacity: 0.7;
     }
 
     .metric-drop {
-      position: absolute;
-      font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+      font-family: 'Orbitron', 'Microsoft YaHei', 'SimHei', monospace;
       font-weight: 900;
       font-size: 20px;
-      color: rgba(168, 85, 247, 0.7);
+      color: rgba(168, 85, 247, 0.9);
       text-shadow: 
-        0 0 10px rgba(168, 85, 247, 0.9),
-        0 0 20px rgba(168, 85, 247, 0.7),
-        0 0 30px rgba(168, 85, 247, 0.5);
+        0 0 5px rgba(168, 85, 247, 1),
+        0 0 10px rgba(168, 85, 247, 0.8),
+        0 0 15px rgba(168, 85, 247, 0.6),
+        0 0 20px rgba(168, 85, 247, 0.4);
+      line-height: 1;
+      margin: 2px 0;
       opacity: 0;
-      animation: metricFall linear infinite;
+      animation: charFlicker 0.5s infinite alternate;
     }
 
-    @keyframes metricFall {
+    .metric-drop:first-child {
+      color: rgba(236, 72, 153, 0.9);
+      text-shadow: 
+        0 0 5px rgba(236, 72, 153, 1),
+        0 0 10px rgba(236, 72, 153, 0.8);
+      animation: charFlicker 0.3s infinite alternate;
+    }
+
+    .metric-drop:nth-child(2) {
+      color: rgba(139, 92, 246, 0.9);
+      text-shadow: 
+        0 0 5px rgba(139, 92, 246, 1),
+        0 0 10px rgba(139, 92, 246, 0.8);
+      animation: charFlicker 0.4s infinite alternate;
+    }
+
+    @keyframes matrixFall {
       0% {
-        transform: translateY(-100px) translateX(0);
+        transform: translateY(-100px);
         opacity: 0;
       }
-      10% {
-        opacity: 1;
+      5% {
+        opacity: 0.8;
       }
-      90% {
-        opacity: 1;
+      95% {
+        opacity: 0.8;
       }
       100% {
-        transform: translateY(100vh) translateX(0);
+        transform: translateY(100vh);
         opacity: 0;
       }
+    }
+
+    @keyframes charFlicker {
+      0%, 100% {
+        opacity: 0.9;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 0.5;
+        transform: scale(0.95);
+      }
+    }
+
+    /* TRAIL EFFECT */
+    .metric-drop::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 40px;
+      background: linear-gradient(to bottom, 
+        rgba(168, 85, 247, 0.8),
+        rgba(168, 85, 247, 0));
+      filter: blur(2px);
     }
 
     /* Chinese Characters Background Effect */
@@ -983,7 +1042,7 @@ app.get("/", (req, res) => {
       text-align: center;
       padding: 60px 20px;
       color: #a78bfa;
-       }
+    }
 
     .empty-state i {
       font-size: 48px;
@@ -1010,6 +1069,18 @@ app.get("/", (req, res) => {
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50% { opacity: 0; }
+    }
+
+    /* Sparkle Animation untuk Matrix Rain */
+    @keyframes sparklePulse {
+      0%, 100% { 
+        opacity: 0;
+        transform: scale(0.5);
+      }
+      50% { 
+        opacity: 1;
+        transform: scale(1.5);
+      }
     }
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -1153,65 +1224,156 @@ app.get("/", (req, res) => {
     const metricRain = document.getElementById('metricRain');
     const evt = new EventSource("/stream");
 
-    // Chinese characters for metric rain
-    const chineseMetrics = [
-      "锁", "封", "控", "网", "安", "全", "系", "统", 
-      "监", "视", "防", "护", "密", "码", "验", "证",
-      "数", "据", "流", "量", "节", "点", "服", "务",
-      "攻", "击", "防", "御", "入", "侵", "检", "测"
+    // Chinese characters and numbers for matrix effect
+    const matrixChars = [
+      "0", "1", "锁", "封", "控", "网", "安", "全", 
+      "系", "统", "监", "视", "防", "护", "密", "码",
+      "验", "证", "数", "据", "流", "量", "节", "点",
+      "服", "务", "攻", "击", "防", "御", "入", "侵",
+      "检", "测", "安", "全", "系", "统", "警", "报",
+      "🚀", "💻", "🔒", "🔓", "📡", "🎯", "⚡", "🔥"
     ];
 
-    // Create metric rain effect
-    function createMetricRain() {
-      const metricsCount = 50; // Number of falling metrics
+    // Matrix columns
+    const matrixColumns = [];
+
+    // Create matrix column
+    function createMatrixColumn(leftPosition) {
+      const column = document.createElement('div');
+      column.className = 'metric-column';
       
-      for (let i = 0; i < metricsCount; i++) {
-        setTimeout(() => {
-          const metric = document.createElement('div');
-          metric.className = 'metric-drop';
-          
-          // Random Chinese character
-          const char = chineseMetrics[Math.floor(Math.random() * chineseMetrics.length)];
-          metric.textContent = char;
-          
-          // Random position
-          const left = Math.random() * 100;
-          metric.style.left = left + '%';
-          
-          // Random animation duration (3-8 seconds)
-          const duration = 3 + Math.random() * 5;
-          metric.style.animationDuration = duration + 's';
-          
-          // Random animation delay
-          const delay = Math.random() * 5;
-          metric.style.animationDelay = delay + 's';
-          
-          // Random font size
-          const size = 16 + Math.random() * 12;
-          metric.style.fontSize = size + 'px';
-          
-          // Random opacity
-          const opacity = 0.3 + Math.random() * 0.5;
-          metric.style.opacity = opacity;
-          
-          metricRain.appendChild(metric);
-          
-          // Remove after animation completes
-          setTimeout(() => {
-            if (metric.parentNode === metricRain) {
-              metricRain.removeChild(metric);
-            }
-          }, (duration + delay) * 1000);
-        }, i * 100);
+      // Random column properties
+      const charsCount = 15 + Math.floor(Math.random() * 20);
+      const duration = 8 + Math.random() * 12;
+      const delay = Math.random() * 5;
+      
+      column.style.left = leftPosition + 'px';
+      column.style.animationDuration = duration + 's';
+      column.style.animationDelay = delay + 's';
+      
+      // Create characters for this column
+      for (let i = 0; i < charsCount; i++) {
+        const char = document.createElement('div');
+        char.className = 'metric-drop';
+        
+        // Random character
+        const charIndex = Math.floor(Math.random() * matrixChars.length);
+        char.textContent = matrixChars[charIndex];
+        
+        // Random flicker delay for each character
+        const flickerDelay = Math.random() * 0.5;
+        char.style.animationDelay = flickerDelay + 's';
+        
+        // Random brightness
+        const brightness = 0.6 + Math.random() * 0.4;
+        char.style.filter = 'brightness(' + brightness + ')';
+        
+        column.appendChild(char);
+      }
+      
+      metricRain.appendChild(column);
+      matrixColumns.push(column);
+      
+      // Remove column after animation completes
+      setTimeout(() => {
+        if (column.parentNode === metricRain) {
+          metricRain.removeChild(column);
+          const index = matrixColumns.indexOf(column);
+          if (index > -1) {
+            matrixColumns.splice(index, 1);
+          }
+        }
+      }, (duration + delay) * 1000);
+    }
+
+    // Create sparkle effect
+    function createSparkleEffect() {
+      const sparkle = document.createElement('div');
+      sparkle.style.cssText = 
+        'position: absolute;' +
+        'width: 3px;' +
+        'height: 3px;' +
+        'background: rgba(168, 85, 247, 0.9);' +
+        'border-radius: 50%;' +
+        'box-shadow: 0 0 10px rgba(168, 85, 247, 0.8), 0 0 20px rgba(168, 85, 247, 0.6);' +
+        'animation: sparklePulse 1s ease-in-out;';
+      
+      sparkle.style.left = Math.random() * 100 + '%';
+      sparkle.style.top = Math.random() * 100 + '%';
+      
+      metricRain.appendChild(sparkle);
+      
+      setTimeout(() => {
+        if (sparkle.parentNode === metricRain) {
+          metricRain.removeChild(sparkle);
+        }
+      }, 1000);
+    }
+
+    // Create matrix rain effect
+    function createMetricRain() {
+      // Clean up old columns if too many
+      if (matrixColumns.length > 30) {
+        const columnsToRemove = matrixColumns.splice(0, matrixColumns.length - 20);
+        columnsToRemove.forEach(col => {
+          if (col.parentNode === metricRain) {
+            metricRain.removeChild(col);
+          }
+        });
+      }
+      
+      // Create 3-8 new columns
+      const newColumns = 3 + Math.floor(Math.random() * 6);
+      const columnWidth = 24;
+      const usedPositions = new Set();
+      
+      for (let i = 0; i < newColumns; i++) {
+        let leftPos;
+        let attempts = 0;
+        
+        // Find unique position
+        do {
+          leftPos = Math.floor(Math.random() * (window.innerWidth - columnWidth));
+          attempts++;
+          if (attempts > 20) break; // Prevent infinite loop
+        } while (Array.from(usedPositions).some(pos => Math.abs(pos - leftPos) < columnWidth * 2));
+        
+        if (attempts <= 20) {
+          usedPositions.add(leftPos);
+          createMatrixColumn(leftPos);
+        }
+      }
+      
+      // Random sparkle effect
+      if (Math.random() > 0.7) {
+        createSparkleEffect();
       }
     }
 
-    // Continuously create metric rain
+    // Continuously create matrix rain
     function startMetricRain() {
       createMetricRain();
-      // Create new rain every 3 seconds
-      setInterval(createMetricRain, 3000);
+      // Create new columns every 2-4 seconds
+      setInterval(createMetricRain, 2000 + Math.random() * 2000);
     }
+
+    // Handle window resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        // Clear existing columns on resize
+        matrixColumns.forEach(col => {
+          if (col.parentNode === metricRain) {
+            metricRain.removeChild(col);
+          }
+        });
+        matrixColumns.length = 0;
+        
+        // Restart with new dimensions
+        createMetricRain();
+      }, 250);
+    });
 
     // Copy URL function
     function copyToClipboard(text) {
@@ -1507,7 +1669,21 @@ app.get("/", (req, res) => {
 
     // Initial setup
     updateServerTime();
-    startMetricRain();
+    
+    // Add sparkle animation to CSS
+    const sparkleStyle = document.createElement('style');
+    sparkleStyle.textContent = 
+      '@keyframes sparklePulse {' +
+        '0%, 100% { ' +
+          'opacity: 0;' +
+          'transform: scale(0.5);' +
+        '}' +
+        '50% { ' +
+          'opacity: 1;' +
+          'transform: scale(1.5);' +
+        '}' +
+      '}';
+    document.head.appendChild(sparkleStyle);
     
     // Add CSS for toast animation
     const style = document.createElement('style');
@@ -1534,6 +1710,9 @@ app.get("/", (req, res) => {
       '}';
     document.head.appendChild(style);
     
+    // Start matrix rain effect
+    startMetricRain();
+    
     // Load initial data
     fetch('/api/stats')
       .then(r => r.json())
@@ -1547,7 +1726,7 @@ app.get("/", (req, res) => {
         });
         addLog({
           time: new Date().toLocaleTimeString(),
-          message: 'SYSTEM: METRIC RAIN EFFECT ACTIVATED',
+          message: 'SYSTEM: MATRIX DIGITAL RAIN ACTIVATED',
           type: 'info'
         });
         addLog({
@@ -1571,8 +1750,11 @@ app.get("/", (req, res) => {
           'SYSTEM: PROXY NETWORK ACTIVE',
           'SYSTEM: ENCRYPTION ACTIVE',
           'SYSTEM: TARGET ACQUISITION RUNNING',
-          'SYSTEM: METRIC STREAM STABLE',
-          'SYSTEM: NEON PURPLE RAIN ACTIVE'
+          'SYSTEM: MATRIX STREAM STABLE',
+          'SYSTEM: DIGITAL RAIN ACTIVE',
+          'SYSTEM: NEON PURPLE MATRIX OPERATIONAL',
+          'SYSTEM: DATA STREAM OPTIMIZED',
+          'SYSTEM: CYBER MONITORING ACTIVE'
         ];
         addLog({
           time: new Date().toLocaleTimeString(),
