@@ -27,7 +27,7 @@ const PROXY_CONFIGS = [
     format: "encoded"
   },
   {
-    url: "https://frosty-salad-93de.marketinggithub.workers.dev/",
+    url: "https://frosty-salad-93de.marketinggithub.workers.dev",
     name: "Cloudflare Worker Proxy",
     format: "double"
   }
@@ -2138,3 +2138,4 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
+
