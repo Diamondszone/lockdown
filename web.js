@@ -145,6 +145,7 @@ if (DEBUG_MODE) {
 const clients = [];
 const successUrls = new Map(); // url -> count
 const failedUrls = new Map();   // url -> count
+let urls = []; // ✅ TAMBAHKAN INI - URL list global
 let stats = {
   totalHits: 0,
   success: 0,
@@ -462,46 +463,46 @@ async function hitUrl(url) {
 async function mainLoop() {
   const WORKERS = 20;
   const MAX_PARALLEL = 4;
-  let urls = []; // ✅ Pindahkan urls ke scope yang lebih luas
+  // ❌ HAPUS INI: let urls = [];
   let lastFetchTime = 0;
   const REFRESH_INTERVAL = 30000; // ✅ Refresh setiap 30 detik
 
   async function fetchUrlList() {
     try {
-        const listResp = await fetchText(SOURCE_URL);
-        if (listResp.ok) {
+      const listResp = await fetchText(SOURCE_URL);
+      if (listResp.ok) {
         const newUrls = parseList(listResp.text);
         if (newUrls.length > 0) {
-            // ✅ Log jika ada perubahan
-            if (newUrls.length !== urls.length) {
+          // ✅ Log jika ada perubahan
+          if (newUrls.length !== urls.length) {
             broadcastLog(`🔄 URL list updated: ${newUrls.length} URLs (was: ${urls.length})`, "info");
-            }
-            
-            // ✅ Cek URL yang baru ditambahkan
-            const oldSet = new Set(urls);
-            const newSet = new Set(newUrls);
-            const added = newUrls.filter(url => !oldSet.has(url));
-            const removed = urls.filter(url => !newSet.has(url));
-            
-            if (added.length > 0) {
+          }
+          
+          // ✅ Cek URL yang baru ditambahkan
+          const oldSet = new Set(urls);
+          const newSet = new Set(newUrls);
+          const added = newUrls.filter(url => !oldSet.has(url));
+          const removed = urls.filter(url => !newSet.has(url));
+          
+          if (added.length > 0) {
             broadcastLog(`➕ Added ${added.length} new URLs`, "info");
             added.slice(0, 3).forEach(url => {
-                broadcastLog(`   ↳ ${url.substring(0, 60)}...`, "info");
+              broadcastLog(`   ↳ ${url.substring(0, 60)}...`, "info");
             });
-            }
-            
-            if (removed.length > 0) {
+          }
+          
+          if (removed.length > 0) {
             broadcastLog(`➖ Removed ${removed.length} URLs`, "info");
             // ✅ HAPUS URL YANG SUDAH TIDAK ADA DARI successUrls DAN failedUrls
             cleanupRemovedUrls(removed);
-            }
-            
-            urls = newUrls;
-            lastFetchTime = Date.now();
+          }
+          
+          urls = newUrls; // ✅ UPDATE URLS GLOBAL
+          lastFetchTime = Date.now();
         }
-        }
+      }
     } catch (err) {
-        broadcastLog(`❌ Failed to fetch URL list: ${err.message}`, "error");
+      broadcastLog(`❌ Failed to fetch URL list: ${err.message}`, "error");
     }
   }
 
@@ -570,7 +571,6 @@ async function mainLoop() {
     }
   }
 }
-
 // ======================== DASHBOARD WEB ===========================
 const app = express();
 
@@ -2220,7 +2220,9 @@ app.get("/api/stats", (req, res) => {
 });
 
 app.get("/api/recent-urls", (req, res) => {
+  // ✅ Filter hanya URL yang masih ada di list
   const successArray = Array.from(successUrls.entries())
+    .filter(([url]) => urls.includes(url)) // ✅ FILTER BERDASARKAN URLS AKTIF
     .slice(0, 100)
     .map(([url, count]) => ({
       url,
@@ -2228,6 +2230,7 @@ app.get("/api/recent-urls", (req, res) => {
     }));
   
   const failedArray = Array.from(failedUrls.entries())
+    .filter(([url]) => urls.includes(url)) // ✅ FILTER BERDASARKAN URLS AKTIF
     .slice(0, 100)
     .map(([url, count]) => ({
       url,
