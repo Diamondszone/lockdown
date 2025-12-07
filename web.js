@@ -152,14 +152,14 @@ let stats = {
   lastUpdate: new Date().toISOString()
 };
 
-
 // ======================== BROADCAST SYSTEM ===========================
 function broadcastLog(msg, type = "info") {
   const line = {
     id: Date.now(),
     time: new Date().toLocaleTimeString(),
     message: msg,
-    type: type // info, success, error
+    type: type, // info, success, error
+    url: extractUrlFromMessage(msg) // ✅ TAMBAHKAN INI
   };
   
   console.log(`[${line.time}] ${msg}`);
@@ -167,6 +167,13 @@ function broadcastLog(msg, type = "info") {
   for (const client of clients) {
     client.res.write(`data: ${JSON.stringify(line)}\n\n`);
   }
+}
+
+// ✅ FUNGSI BARU: Extract URL dari message
+function extractUrlFromMessage(message) {
+  const urlRegex = /https?:\/\/[^\s\)\]]+/;
+  const match = message.match(urlRegex);
+  return match ? match[0] : null;
 }
 
 function broadcastStats() {
@@ -184,6 +191,30 @@ function broadcastStats() {
     client.res.write(`data: ${JSON.stringify(statData)}\n\n`);
   }
 }
+
+
+// ======================== URL CLEANUP ===========================
+function cleanupRemovedUrls(removedUrls) {
+  let cleanedFromSuccess = 0;
+  let cleanedFromFailed = 0;
+  
+  for (const url of removedUrls) {
+    if (successUrls.has(url)) {
+      successUrls.delete(url);
+      cleanedFromSuccess++;
+    }
+    if (failedUrls.has(url)) {
+      failedUrls.delete(url);
+      cleanedFromFailed++;
+    }
+  }
+  
+  if (cleanedFromSuccess > 0 || cleanedFromFailed > 0) {
+    broadcastLog(`🧹 Cleaned ${cleanedFromSuccess} success URLs and ${cleanedFromFailed} failed URLs`, "info");
+  }
+}
+
+
 
 // ======================== PARSER ===========================
 function parseList(txt) {
@@ -369,6 +400,11 @@ async function findWorkingProxy(targetUrl) {
 
 // ======================== HIT URL ===========================
 async function hitUrl(url) {
+ // ✅ Safety check: jangan proses URL jika sudah tidak ada di list
+  if (!urls.includes(url)) {
+    return { success: false, url, error: "URL removed from list" };
+  }
+  
   stats.totalHits++;
   stats.lastUpdate = new Date().toISOString();
   
@@ -423,65 +459,6 @@ async function hitUrl(url) {
 }
 
 // ======================== WORKER NON-BLOCKING ===========================
-// async function mainLoop() {
-//   const WORKERS = 20;
-//   const MAX_PARALLEL = 4;
-
-//   while (true) {
-//     try {
-//       const listResp = await fetchText(SOURCE_URL);
-//       const urls = listResp.ok ? parseList(listResp.text) : [];
-
-//       if (urls.length === 0) {
-//         broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
-//         await new Promise(r => setTimeout(r, 3000));
-//         continue;
-//       }
-
-//       broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
-      
-//       // Log proxy status
-//       const currentProxy = PROXY_CONFIGS[activeProxyIndex];
-//       broadcastLog(`🛡️ Using proxy: ${currentProxy.name} (${currentProxy.url})`, "info");
-      
-//       broadcastStats();
-
-//       let current = 0;
-
-//       async function worker() {
-//         while (true) {
-//           const batch = [];
-
-//           for (let i = 0; i < MAX_PARALLEL; i++) {
-//             let u = urls[current++];
-//             if (!u) break;
-//             batch.push(hitUrl(u));
-//           }
-
-//           if (batch.length === 0) break;
-
-//           await Promise.race(batch);
-//           await new Promise((r) => setTimeout(r, 5));
-//         }
-//       }
-
-//       const pool = [];
-//       for (let i = 0; i < WORKERS; i++) pool.push(worker());
-
-//       await Promise.all(pool);
-      
-//       broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
-//       broadcastStats();
-      
-//       await new Promise(r => setTimeout(r, 100));
-      
-//     } catch (err) {
-//       broadcastLog("❌ ERROR LOOP: " + err.message, "error");
-//       await new Promise(r => setTimeout(r, 5000));
-//     }
-//   }
-// }
-// ======================== WORKER NON-BLOCKING ===========================
 async function mainLoop() {
   const WORKERS = 20;
   const MAX_PARALLEL = 4;
@@ -491,38 +468,40 @@ async function mainLoop() {
 
   async function fetchUrlList() {
     try {
-      const listResp = await fetchText(SOURCE_URL);
-      if (listResp.ok) {
+        const listResp = await fetchText(SOURCE_URL);
+        if (listResp.ok) {
         const newUrls = parseList(listResp.text);
         if (newUrls.length > 0) {
-          // ✅ Log jika ada perubahan
-          if (newUrls.length !== urls.length) {
+            // ✅ Log jika ada perubahan
+            if (newUrls.length !== urls.length) {
             broadcastLog(`🔄 URL list updated: ${newUrls.length} URLs (was: ${urls.length})`, "info");
-          }
-          
-          // ✅ Cek URL yang baru ditambahkan
-          const oldSet = new Set(urls);
-          const newSet = new Set(newUrls);
-          const added = newUrls.filter(url => !oldSet.has(url));
-          const removed = urls.filter(url => !newSet.has(url));
-          
-          if (added.length > 0) {
+            }
+            
+            // ✅ Cek URL yang baru ditambahkan
+            const oldSet = new Set(urls);
+            const newSet = new Set(newUrls);
+            const added = newUrls.filter(url => !oldSet.has(url));
+            const removed = urls.filter(url => !newSet.has(url));
+            
+            if (added.length > 0) {
             broadcastLog(`➕ Added ${added.length} new URLs`, "info");
             added.slice(0, 3).forEach(url => {
-              broadcastLog(`   ↳ ${url.substring(0, 60)}...`, "info");
+                broadcastLog(`   ↳ ${url.substring(0, 60)}...`, "info");
             });
-          }
-          
-          if (removed.length > 0) {
+            }
+            
+            if (removed.length > 0) {
             broadcastLog(`➖ Removed ${removed.length} URLs`, "info");
-          }
-          
-          urls = newUrls;
-          lastFetchTime = Date.now();
+            // ✅ HAPUS URL YANG SUDAH TIDAK ADA DARI successUrls DAN failedUrls
+            cleanupRemovedUrls(removed);
+            }
+            
+            urls = newUrls;
+            lastFetchTime = Date.now();
         }
-      }
+        }
     } catch (err) {
-      broadcastLog(`❌ Failed to fetch URL list: ${err.message}`, "error");
+        broadcastLog(`❌ Failed to fetch URL list: ${err.message}`, "error");
     }
   }
 
@@ -1597,13 +1576,16 @@ app.get("/", (req, res) => {
     let failedUrls = [];
     let currentUrlTab = 'success';
     let stats = {
-      totalHits: 0,
-      success: 0,
-      failed: 0,
-      successRate: '0.0',
-      uniqueSuccess: 0,
-      uniqueFailed: 0
+    totalHits: 0,
+    success: 0,
+    failed: 0,
+    successRate: '0.0',
+    uniqueSuccess: 0,
+    uniqueFailed: 0
     };
+
+    // ✅ TAMBAHKAN SET UNTUK TRACK URL AKTIF
+    let activeUrlsSet = new Set();
 
     const logContent = document.getElementById('log-content');
     const urlList = document.getElementById('url-list');
@@ -1844,55 +1826,79 @@ app.get("/", (req, res) => {
     setInterval(updateServerTime, 1000);
 
     // Add log to the TOP (newest first)
+    // Add log to the TOP (newest first)
     function addLog(log) {
-      // Remove empty state if it exists
-      const emptyLogs = document.getElementById('empty-logs');
-      if (emptyLogs) emptyLogs.remove();
-      
-      const logItem = document.createElement('div');
-      logItem.className = 'log-item ' + log.type + ' terminal-line';
-      
-      // Format time for cyberpunk style
-      const now = new Date();
-      const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
-                     now.getMinutes().toString().padStart(2, '0') + ':' + 
-                     now.getSeconds().toString().padStart(2, '0');
-      
-      let message = log.message;
-      // Add emoji prefix based on type
-      if (log.type === 'success') {
-        message = '🟢 ' + message;
-      } else if (log.type === 'error') {
-        message = '🔴 ' + message;
-      } else {
-        message = '🔵 ' + message;
-      }
-      
-      logItem.innerHTML = 
-        '<div class="log-time">[' + timeStr + ']</div>' +
-        '<div class="log-message">' + message + '</div>';
-      
-      // Insert at the TOP of log content
-      if (logContent.firstChild) {
-        logContent.insertBefore(logItem, logContent.firstChild);
-      } else {
-        logContent.appendChild(logItem);
-      }
-      
-      logs.unshift(log);
-      
-      // Keep only last 100 logs in memory
-      if (logs.length > 100) {
-        logs = logs.slice(0, 100);
-      }
-      
-      // Remove old logs from DOM if there are too many
-      const logItems = logContent.querySelectorAll('.log-item');
-      if (logItems.length > 100) {
-        for (let i = 100; i < logItems.length; i++) {
-          logItems[i].remove();
+        // ✅ FILTER: Skip log jika mengandung URL yang tidak aktif
+        if (log.message) {
+            const urlMatch = log.message.match(/(https?:\/\/[^\s\)\]]+)/);
+            
+            if (urlMatch) {
+            const url = urlMatch[0];
+            
+            // Cek apakah URL ada di set aktif
+            if (!activeUrlsSet.has(url) && 
+                !log.message.includes('SYSTEM:') &&
+                !log.message.includes('URL list') &&
+                !log.message.includes('Added') &&
+                !log.message.includes('Removed') &&
+                !log.message.includes('Cleaned') &&
+                !log.message.includes('Using proxy') &&
+                !log.message.includes('Processing') &&
+                !log.message.includes('Loop selesai') &&
+                !log.message.includes('CONNECTION LOST')) {
+                return; // Skip log ini
+            }
+            }
         }
-      }
+        
+        // Remove empty state if it exists
+        const emptyLogs = document.getElementById('empty-logs');
+        if (emptyLogs) emptyLogs.remove();
+        
+        const logItem = document.createElement('div');
+        logItem.className = 'log-item ' + log.type + ' terminal-line';
+        
+        // Format time for cyberpunk style
+        const now = new Date();
+        const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                        now.getMinutes().toString().padStart(2, '0') + ':' + 
+                        now.getSeconds().toString().padStart(2, '0');
+        
+        let message = log.message;
+        // Add emoji prefix based on type
+        if (log.type === 'success') {
+            message = '🟢 ' + message;
+        } else if (log.type === 'error') {
+            message = '🔴 ' + message;
+        } else {
+            message = '🔵 ' + message;
+        }
+        
+        logItem.innerHTML = 
+            '<div class="log-time">[' + timeStr + ']</div>' +
+            '<div class="log-message">' + message + '</div>';
+        
+        // Insert at the TOP of log content
+        if (logContent.firstChild) {
+            logContent.insertBefore(logItem, logContent.firstChild);
+        } else {
+            logContent.appendChild(logItem);
+        }
+        
+        logs.unshift(log);
+        
+        // Keep only last 100 logs in memory
+        if (logs.length > 100) {
+            logs = logs.slice(0, 100);
+        }
+        
+        // Remove old logs from DOM if there are too many
+        const logItems = logContent.querySelectorAll('.log-item');
+        if (logItems.length > 100) {
+            for (let i = 100; i < logItems.length; i++) {
+            logItems[i].remove();
+            }
+        }
     }
 
     // Update URL list
@@ -2002,38 +2008,86 @@ app.get("/", (req, res) => {
     }
 
     // Load URL lists
+    // function loadUrlLists() {
+    //   fetch('/api/recent-urls')
+    //     .then(r => r.json())
+    //     .then(data => {
+    //       successUrls = data.success || [];
+    //       failedUrls = data.failed || [];
+    //       updateUrlList();
+    //     });
+    // }
+    // Load URL lists
     function loadUrlLists() {
-      fetch('/api/recent-urls')
-        .then(r => r.json())
-        .then(data => {
-          successUrls = data.success || [];
-          failedUrls = data.failed || [];
-          updateUrlList();
+        fetch('/api/recent-urls')
+            .then(r => r.json())
+            .then(data => {
+            successUrls = data.success || [];
+            failedUrls = data.failed || [];
+            
+            // ✅ UPDATE SET URL AKTIF
+            activeUrlsSet.clear();
+            successUrls.forEach(u => activeUrlsSet.add(u.url));
+            failedUrls.forEach(u => activeUrlsSet.add(u.url));
+            
+            updateUrlList();
+            
+            // ✅ BERSIHKAN LOG YANG TIDAK RELEVAN
+            cleanupIrrelevantLogs();
+            });
+        }
+
+        // ✅ FUNGSI BARU: Bersihkan log yang mengandung URL tidak aktif
+        function cleanupIrrelevantLogs() {
+        const logItems = document.querySelectorAll('.log-item');
+        logItems.forEach(item => {
+            const message = item.querySelector('.log-message')?.textContent || '';
+            
+            // Cari URL di dalam message
+            const urlMatch = message.match(/(https?:\/\/[^\s\)\]]+)/);
+            
+            if (urlMatch) {
+            const url = urlMatch[0];
+            
+            // Jika URL tidak ada di set aktif DAN bukan system message, hapus
+            if (!activeUrlsSet.has(url) && 
+                !message.includes('SYSTEM:') &&
+                !message.includes('URL list') &&
+                !message.includes('Added') &&
+                !message.includes('Removed') &&
+                !message.includes('Cleaned') &&
+                !message.includes('Using proxy') &&
+                !message.includes('Processing') &&
+                !message.includes('Loop selesai') &&
+                !message.includes('CONNECTION LOST')) {
+                item.remove();
+            }
+            }
         });
     }
 
-    // Event Source handling
+// Event Source handling
     evt.onmessage = (e) => {
-      try {
+    try {
         const data = JSON.parse(e.data);
         
         if (data.type === 'stats') {
-          updateStats(data.data);
-          // Add heartbeat pulse effect
-          document.querySelectorAll('.stat-card').forEach(card => {
+        updateStats(data.data);
+        // Add heartbeat pulse effect
+        document.querySelectorAll('.stat-card').forEach(card => {
             card.style.animation = 'none';
             setTimeout(() => {
-              card.style.animation = '';
+            card.style.animation = '';
             }, 10);
-          });
-          // Reload URL lists setiap kali stats diupdate
-          loadUrlLists();
+        });
+        // Reload URL lists setiap kali stats diupdate
+        loadUrlLists(); // ✅ INI AKAN TRIGGER cleanupIrrelevantLogs()
         } else {
-          addLog(data);
+        addLog(data);
         }
-      } catch (err) {
+    } catch (err) {
         console.error('Error parsing SSE:', err);
-      }
+    }
     };
 
     evt.onerror = () => {
@@ -2253,4 +2307,3 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
-
