@@ -25,6 +25,11 @@ const PROXY_CONFIGS = [
     url: "https://api.allorigins.win/raw?url=",
     name: "AllOrigins",
     format: "encoded"
+  },
+  {
+    url: "https://frosty-salad-93de.marketinggithub.workers.dev/",
+    name: "Cloudflare Worker Proxy",
+    format: "double"
   }
 ];
 
@@ -61,7 +66,8 @@ if (DEBUG_MODE) {
       const testConfigs = [
         { name: "Railway (double)", url: PROXY_CONFIGS[0].url, format: "double" },
         { name: "Vercel (single)", url: PROXY_CONFIGS[1].url, format: "single" },
-        { name: "AllOrigins (encoded)", url: PROXY_CONFIGS[2].url, format: "encoded" }
+        { name: "AllOrigins (encoded)", url: PROXY_CONFIGS[2].url, format: "encoded" },
+        { name: "Cloudflare Worker (double)", url: PROXY_CONFIGS[3].url, format: "double" }
       ];
       
       for (const config of testConfigs) {
@@ -2132,6 +2138,3 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
-
-
-
