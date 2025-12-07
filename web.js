@@ -34,9 +34,7 @@ if (DEBUG_MODE) {
     console.log("\n🔍 === DEBUG: TESTING URL ENCODING ===");
     
     const testUrls = [
-      "https://example.com/api/data",
-      "https://tessa.cz/wp-includes/rss-functions.php?action=verify&key=sitecore&token=test123",
-      "https://api.example.com/v1/users?page=1&limit=10&sort=desc"
+    "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x"
     ];
     
     for (const url of testUrls) {
@@ -2116,3 +2114,4 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
+
