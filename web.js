@@ -85,7 +85,7 @@ if (DEBUG_MODE) {
   function testProxyBuilder() {
     console.log("\n🔧 === DEBUG: TESTING PROXY BUILDER FUNCTIONS ===");
     
-    const testUrl = "https://tessa.cz/wp-includes/rss-functions.php?action=verify&key=sitecore";
+    const testUrl = "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x";
     
     console.log(`Test URL: ${testUrl}`);
     
@@ -2114,4 +2114,5 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
+
 
