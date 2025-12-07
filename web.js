@@ -1828,7 +1828,9 @@ app.get("/", (req, res) => {
     // Add log to the TOP (newest first)
     // Add log to the TOP (newest first)
     function addLog(log) {
+        console.log('📝 [DEBUG] addLog() called:', log);
         // ✅ FILTER: Skip log jika mengandung URL yang tidak aktif
+        /*
         if (log.message) {
             const urlMatch = log.message.match(/(https?:\/\/[^\s\)\]]+)/);
             
@@ -1850,7 +1852,7 @@ app.get("/", (req, res) => {
             }
             }
         }
-        
+        */
         // Remove empty state if it exists
         const emptyLogs = document.getElementById('empty-logs');
         if (emptyLogs) emptyLogs.remove();
@@ -2037,60 +2039,54 @@ function updateUrlList() {
     // }
     // Load URL lists
 // Load URL lists
+// Load URL lists - VERSION SIMPLE
 function loadUrlLists() {
   console.log('🔄 [DEBUG] loadUrlLists() called');
   
   fetch('/api/recent-urls')
     .then(r => {
       console.log('📡 [DEBUG] API Response status:', r.status);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     })
     .then(data => {
-      console.log('✅ [DEBUG] API Data received:', {
+      console.log('✅ [DEBUG] API Data:', {
         successCount: data.success?.length || 0,
-        failedCount: data.failed?.length || 0,
-        allData: data
+        failedCount: data.failed?.length || 0
       });
       
       successUrls = data.success || [];
       failedUrls = data.failed || [];
       
-      console.log('📊 [DEBUG] Variables updated:', {
-        successUrlsLength: successUrls.length,
-        failedUrlsLength: failedUrls.length,
-        successUrls: successUrls,
-        failedUrls: failedUrls
+      console.log('📊 [DEBUG] Loaded:', {
+        successUrls: successUrls.length,
+        failedUrls: failedUrls.length
       });
       
-      // ✅ UPDATE SET URL AKTIF
+      // Update active set (sederhana)
       activeUrlsSet.clear();
-      successUrls.forEach(u => {
-        activeUrlsSet.add(u.url);
-        console.log('➕ [DEBUG] Added to active set:', u.url.substring(0, 50));
-      });
-      failedUrls.forEach(u => {
-        activeUrlsSet.add(u.url);
-        console.log('➕ [DEBUG] Added to active set:', u.url.substring(0, 50));
-      });
+      successUrls.forEach(u => activeUrlsSet.add(u.url));
+      failedUrls.forEach(u => activeUrlsSet.add(u.url));
       
-      console.log('🎯 [DEBUG] Active URLs in set:', Array.from(activeUrlsSet));
+      console.log('🎯 [DEBUG] Active URLs:', activeUrlsSet.size);
       
-      // Panggil updateUrlList dengan force
-      console.log('🎨 [DEBUG] Calling updateUrlList()');
+      // Update display
       updateUrlList();
       
-      // ✅ BERSIHKAN LOG YANG TIDAK RELEVAN
-      console.log('🧹 [DEBUG] Calling cleanupIrrelevantLogs()');
-      cleanupIrrelevantLogs();
+      // Skip cleanup untuk sekarang
+      console.log('⏩ [DEBUG] Skipping cleanup');
     })
     .catch(err => {
-      console.error('❌ [DEBUG] Error loading URL lists:', err);
+      console.error('❌ [DEBUG] Error:', err);
     });
 }
 
         // ✅ FUNGSI BARU: Bersihkan log yang mengandung URL tidak aktif
         function cleanupIrrelevantLogs() {
-        const logItems = document.querySelectorAll('.log-item');
+            console.log('🧹 [DEBUG] cleanupIrrelevantLogs() called (DISABLED FOR NOW)');
+            console.log('🎯 [DEBUG] Active URLs count:', activeUrlsSet.size);
+
+        /*const logItems = document.querySelectorAll('.log-item');
         logItems.forEach(item => {
             const message = item.querySelector('.log-message')?.textContent || '';
             
@@ -2114,7 +2110,8 @@ function loadUrlLists() {
                 item.remove();
             }
             }
-        });
+        });*/
+
     }
 
 // Event Source handling
