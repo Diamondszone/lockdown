@@ -1902,39 +1902,57 @@ app.get("/", (req, res) => {
     }
 
     // Update URL list
-    function updateUrlList() {
-      const urls = currentUrlTab === 'success' ? successUrls : failedUrls;
-      
-      if (urls.length === 0) {
-        urlList.innerHTML = 
-          '<div class="empty-state">' +
-            '<i>' + (currentUrlTab === 'success' ? '🟢' : '🔴') + '</i>' +
-            '<div>' + (currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS') + '</div>' +
-            '<div style="font-size: 12px; margin-top: 8px;">' + 
-              (currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL') + 
-            '</div>' +
-          '</div>';
-        return;
-      }
-      
-      urlList.innerHTML = urls.map((url, index) => {
-        const escapedUrl = url.url.replace(/'/g, "\\'");
-        return '<div class="url-item ' + (currentUrlTab === 'success' ? 'success' : 'failed') + '">' +
-          '<div class="url-text">' + url.url + '</div>' +
-          '<div class="url-meta">' +
-            '<div class="url-status">' +
-              '<span>HITS: ' + url.count + '</span>' +
-              '<span>STATUS: ' + (currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE') + '</span>' +
-            '</div>' +
-            '<button class="copy-btn" onclick="copyUrl(\\'' + escapedUrl + '\\', this)">' +
-              '<i>📋</i>' +
-              'COPY URL' +
-            '</button>' +
-          '</div>' +
-        '</div>';
-      }).join('');
-    }
-
+// Update URL list
+function updateUrlList() {
+  console.log('🔄 [DEBUG] updateUrlList() called');
+  console.log('📋 [DEBUG] currentUrlTab:', currentUrlTab);
+  
+  const urls = currentUrlTab === 'success' ? successUrls : failedUrls;
+  
+  console.log('📊 [DEBUG] URLs to display:', {
+    tab: currentUrlTab,
+    count: urls.length,
+    urls: urls
+  });
+  
+  if (urls.length === 0) {
+    console.log('📭 [DEBUG] No URLs to display - showing empty state');
+    urlList.innerHTML = 
+      '<div class="empty-state">' +
+        '<i>' + (currentUrlTab === 'success' ? '🟢' : '🔴') + '</i>' +
+        '<div>' + (currentUrlTab === 'success' ? 'NO ACTIVE TARGETS' : 'NO FAILED TARGETS') + '</div>' +
+        '<div style="font-size: 12px; margin-top: 8px;">' + 
+          (currentUrlTab === 'success' ? 'AWAITING TARGET ACQUISITION...' : 'ALL TARGETS OPERATIONAL') + 
+        '</div>' +
+      '</div>';
+    return;
+  }
+  
+  console.log('🎨 [DEBUG] Generating HTML for', urls.length, 'URLs');
+  
+  const html = urls.map((url, index) => {
+    const escapedUrl = url.url.replace(/'/g, "\\'");
+    return '<div class="url-item ' + (currentUrlTab === 'success' ? 'success' : 'failed') + '">' +
+      '<div class="url-text">' + url.url + '</div>' +
+      '<div class="url-meta">' +
+        '<div class="url-status">' +
+          '<span>HITS: ' + url.count + '</span>' +
+          '<span>STATUS: ' + (currentUrlTab === 'success' ? '🟢 ONLINE' : '🔴 OFFLINE') + '</span>' +
+        '</div>' +
+        '<button class="copy-btn" onclick="copyUrl(\\'' + escapedUrl + '\\', this)">' +
+          '<i>📋</i>' +
+          'COPY URL' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  
+  console.log('📝 [DEBUG] Generated HTML length:', html.length);
+  console.log('📄 [DEBUG] First 500 chars of HTML:', html.substring(0, 500));
+  
+  urlList.innerHTML = html;
+  console.log('✅ [DEBUG] URL list updated in DOM');
+}
     // Copy URL function
     function copyUrl(url, button) {
       copyToClipboard(url);
@@ -2018,24 +2036,57 @@ app.get("/", (req, res) => {
     //     });
     // }
     // Load URL lists
-    function loadUrlLists() {
-        fetch('/api/recent-urls')
-            .then(r => r.json())
-            .then(data => {
-            successUrls = data.success || [];
-            failedUrls = data.failed || [];
-            
-            // ✅ UPDATE SET URL AKTIF
-            activeUrlsSet.clear();
-            successUrls.forEach(u => activeUrlsSet.add(u.url));
-            failedUrls.forEach(u => activeUrlsSet.add(u.url));
-            
-            updateUrlList();
-            
-            // ✅ BERSIHKAN LOG YANG TIDAK RELEVAN
-            cleanupIrrelevantLogs();
-            });
-        }
+// Load URL lists
+function loadUrlLists() {
+  console.log('🔄 [DEBUG] loadUrlLists() called');
+  
+  fetch('/api/recent-urls')
+    .then(r => {
+      console.log('📡 [DEBUG] API Response status:', r.status);
+      return r.json();
+    })
+    .then(data => {
+      console.log('✅ [DEBUG] API Data received:', {
+        successCount: data.success?.length || 0,
+        failedCount: data.failed?.length || 0,
+        allData: data
+      });
+      
+      successUrls = data.success || [];
+      failedUrls = data.failed || [];
+      
+      console.log('📊 [DEBUG] Variables updated:', {
+        successUrlsLength: successUrls.length,
+        failedUrlsLength: failedUrls.length,
+        successUrls: successUrls,
+        failedUrls: failedUrls
+      });
+      
+      // ✅ UPDATE SET URL AKTIF
+      activeUrlsSet.clear();
+      successUrls.forEach(u => {
+        activeUrlsSet.add(u.url);
+        console.log('➕ [DEBUG] Added to active set:', u.url.substring(0, 50));
+      });
+      failedUrls.forEach(u => {
+        activeUrlsSet.add(u.url);
+        console.log('➕ [DEBUG] Added to active set:', u.url.substring(0, 50));
+      });
+      
+      console.log('🎯 [DEBUG] Active URLs in set:', Array.from(activeUrlsSet));
+      
+      // Panggil updateUrlList dengan force
+      console.log('🎨 [DEBUG] Calling updateUrlList()');
+      updateUrlList();
+      
+      // ✅ BERSIHKAN LOG YANG TIDAK RELEVAN
+      console.log('🧹 [DEBUG] Calling cleanupIrrelevantLogs()');
+      cleanupIrrelevantLogs();
+    })
+    .catch(err => {
+      console.error('❌ [DEBUG] Error loading URL lists:', err);
+    });
+}
 
         // ✅ FUNGSI BARU: Bersihkan log yang mengandung URL tidak aktif
         function cleanupIrrelevantLogs() {
