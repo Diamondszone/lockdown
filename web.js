@@ -28,13 +28,17 @@ const PROXY_CONFIGS = [
   }
 ];
 
+// ======================== PROXY MANAGEMENT (PINDHKAN KE SINI!) ===========================
+let activeProxyIndex = 0;
+let proxyHealth = new Map();
+
 // ======================== DEBUG UTILITIES ===========================
 if (DEBUG_MODE) {
   function testEncoding() {
     console.log("\n🔍 === DEBUG: TESTING URL ENCODING ===");
     
     const testUrls = [
-    "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x"
+      "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x"
     ];
     
     for (const url of testUrls) {
@@ -78,33 +82,50 @@ if (DEBUG_MODE) {
     console.log("✅ === DEBUG: ENCODING TEST COMPLETE ===\n");
   }
   
-  // Jalankan test encoding
-  testEncoding();
-  
-  // Test juga fungsi buildProxyUrlWithFallback
+  // Fungsi helper untuk test proxy builder (tanpa dependency ke fungsi lain)
   function testProxyBuilder() {
     console.log("\n🔧 === DEBUG: TESTING PROXY BUILDER FUNCTIONS ===");
     
     const testUrl = "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x";
     
     console.log(`Test URL: ${testUrl}`);
+    console.log(`Test URL length: ${testUrl.length} chars`);
     
-    // Simulasikan dengan setiap proxy sebagai aktif
+    // Versi sederhana dari buildProxyUrlWithFallback untuk testing
+    function simpleBuildProxyUrl(targetUrl, config) {
+      if (config.format === "single") {
+        const cleanUrl = targetUrl.replace(/^https?:\/\//, '');
+        return `${config.url}/https:/${cleanUrl}`;
+      } else if (config.format === "double") {
+        return `${config.url}/${targetUrl}`;
+      } else if (config.format === "encoded") {
+        return `${config.url}${encodeURIComponent(targetUrl)}`;
+      }
+      return `${config.url}/${targetUrl}`;
+    }
+    
+    // Test dengan setiap proxy
     for (let i = 0; i < PROXY_CONFIGS.length; i++) {
-      const originalIndex = activeProxyIndex;
-      activeProxyIndex = i;
+      const config = PROXY_CONFIGS[i];
+      const proxyUrl = simpleBuildProxyUrl(testUrl, config);
       
-      const result = buildProxyUrlWithFallback(testUrl);
-      console.log(`\n📡 Active proxy: ${result.config.name} (format: ${result.config.format})`);
-      console.log(`   Built URL: ${result.url.substring(0, 100)}...`);
-      console.log(`   URL length: ${result.url.length} chars`);
+      console.log(`\n📡 Proxy ${i + 1}: ${config.name}`);
+      console.log(`   Format: ${config.format}`);
+      console.log(`   URL: ${proxyUrl.substring(0, 100)}...`);
+      console.log(`   Length: ${proxyUrl.length} chars`);
       
-      activeProxyIndex = originalIndex;
+      // Verifikasi khusus untuk encoded format
+      if (config.format === "encoded") {
+        console.log(`   ✅ Contains '?url='? ${proxyUrl.includes('?url=')}`);
+        console.log(`   ✅ Contains encoded 'https%3A'? ${proxyUrl.includes('https%3A')}`);
+      }
     }
     
     console.log("✅ === DEBUG: PROXY BUILDER TEST COMPLETE ===\n");
   }
   
+  // Jalankan test
+  testEncoding();
   testProxyBuilder();
 }
 
@@ -119,9 +140,6 @@ let stats = {
   lastUpdate: new Date().toISOString()
 };
 
-// ======================== PROXY MANAGEMENT ===========================
-let activeProxyIndex = 0;
-let proxyHealth = new Map();
 
 // ======================== BROADCAST SYSTEM ===========================
 function broadcastLog(msg, type = "info") {
@@ -2114,5 +2132,6 @@ app.listen(PORT, () => {
 
 // Start main loop
 mainLoop();
+
 
 
