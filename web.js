@@ -426,21 +426,67 @@ async function hitUrl(url) {
 async function mainLoop() {
   const WORKERS = 20;
   const MAX_PARALLEL = 4;
+  let urls = []; // ✅ Pindahkan urls ke scope yang lebih luas
+  let lastFetchTime = 0;
+  const REFRESH_INTERVAL = 30000; // ✅ Refresh setiap 30 detik
+
+  async function fetchUrlList() {
+    try {
+      const listResp = await fetchText(SOURCE_URL);
+      if (listResp.ok) {
+        const newUrls = parseList(listResp.text);
+        if (newUrls.length > 0) {
+          // ✅ Log jika ada perubahan
+          if (newUrls.length !== urls.length) {
+            broadcastLog(`🔄 URL list updated: ${newUrls.length} URLs (was: ${urls.length})`, "info");
+          }
+          
+          // ✅ Cek URL yang baru ditambahkan
+          const oldSet = new Set(urls);
+          const newSet = new Set(newUrls);
+          const added = newUrls.filter(url => !oldSet.has(url));
+          const removed = urls.filter(url => !newSet.has(url));
+          
+          if (added.length > 0) {
+            broadcastLog(`➕ Added ${added.length} new URLs`, "info");
+            added.slice(0, 3).forEach(url => {
+              broadcastLog(`   ↳ ${url.substring(0, 60)}...`, "info");
+            });
+          }
+          
+          if (removed.length > 0) {
+            broadcastLog(`➖ Removed ${removed.length} URLs`, "info");
+          }
+          
+          urls = newUrls;
+          lastFetchTime = Date.now();
+        }
+      }
+    } catch (err) {
+      broadcastLog(`❌ Failed to fetch URL list: ${err.message}`, "error");
+    }
+  }
+
+  // ✅ Fetch initial URL list
+  await fetchUrlList();
 
   while (true) {
     try {
-      const listResp = await fetchText(SOURCE_URL);
-      const urls = listResp.ok ? parseList(listResp.text) : [];
+      // ✅ Refresh URL list setiap interval
+      if (Date.now() - lastFetchTime > REFRESH_INTERVAL) {
+        await fetchUrlList();
+      }
 
       if (urls.length === 0) {
-        broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
+        broadcastLog("❌ SOURCE kosong → fetching ulang...", "error");
+        await fetchUrlList();
         await new Promise(r => setTimeout(r, 3000));
         continue;
       }
 
-      broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
+      broadcastLog(`📌 Processing ${urls.length} URLs…`, "info");
       
-      // Log proxy status
+      // ✅ Update proxy status
       const currentProxy = PROXY_CONFIGS[activeProxyIndex];
       broadcastLog(`🛡️ Using proxy: ${currentProxy.name} (${currentProxy.url})`, "info");
       
@@ -473,6 +519,11 @@ async function mainLoop() {
       broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
       broadcastStats();
       
+      // ✅ Cek update lebih sering selama jeda
+      if (Date.now() - lastFetchTime > REFRESH_INTERVAL) {
+        await fetchUrlList();
+      }
+      
       await new Promise(r => setTimeout(r, 100));
       
     } catch (err) {
@@ -481,7 +532,6 @@ async function mainLoop() {
     }
   }
 }
-
 
 // ======================== DASHBOARD WEB ===========================
 const app = express();
