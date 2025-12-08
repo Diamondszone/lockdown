@@ -367,21 +367,25 @@ async function findWorkingProxy(targetUrl) {
   return currentProxy;
 }
 
-// ======================== HIT URL ===========================
+// ======================== HIT URL (FIXED VERSION) ===========================
 async function hitUrl(url) {
-  stats.totalHits++;
-  stats.lastUpdate = new Date().toISOString();
+  const startTime = Date.now();
   
   // Coba direct first
   const direct = await fetchText(url);
   const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
 
   if (directOk) {
+    // ✅ INCREMENT DI SINI SAJA (tidak double)
+    stats.totalHits++;
     stats.success++;
+    stats.lastUpdate = new Date().toISOString();
     successUrls.set(url, (successUrls.get(url) || 0) + 1);
     failedUrls.delete(url);
-    broadcastLog(`✅ ${url} (Direct)`, "success");
-    return { success: true, method: "direct", url };
+    
+    const duration = Date.now() - startTime;
+    broadcastLog(`✅ ${url} (Direct) [${duration}ms]`, "success");
+    return { success: true, method: "direct", url, duration };
   }
 
   // Coba dengan proxy (dengan fallback)
@@ -391,34 +395,49 @@ async function hitUrl(url) {
     const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
 
     if (proxyOk) {
+      // ✅ INCREMENT DI SINI SAJA (tidak double)
+      stats.totalHits++;
       stats.success++;
+      stats.lastUpdate = new Date().toISOString();
       successUrls.set(url, (successUrls.get(url) || 0) + 1);
       failedUrls.delete(url);
-      broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name})`, "success");
+      
+      const duration = Date.now() - startTime;
+      broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name}) [${duration}ms]`, "success");
       return { 
         success: true, 
         method: "proxy", 
         url, 
         proxy: proxyInfo.config.name,
-        proxyUrl: proxyInfo.url
+        proxyUrl: proxyInfo.url,
+        duration
       };
     } else {
       await rotateToNextProxy();
       throw new Error(`Proxy ${proxyInfo.config.name} failed with status ${proxied.status}`);
     }
   } catch (proxyErr) {
+    // ✅ INCREMENT DI SINI SAJA (tidak double)
+    stats.totalHits++;
     stats.failed++;
+    stats.lastUpdate = new Date().toISOString();
     failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
     successUrls.delete(url);
     
-    let errorMsg = `❌ ${url}`;
+    const duration = Date.now() - startTime;
+    let errorMsg = `❌ ${url} [${duration}ms]`;
     if (direct.status && direct.status !== 200) {
       errorMsg += ` [Direct: ${direct.status}]`;
     }
     errorMsg += ` [Proxy failed]`;
     
     broadcastLog(errorMsg, "error");
-    return { success: false, url, error: proxyErr.message };
+    return { 
+      success: false, 
+      url, 
+      error: proxyErr.message,
+      duration 
+    };
   }
 }
 
