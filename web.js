@@ -423,9 +423,102 @@ async function hitUrl(url) {
 }
 
 // ======================== WORKER NON-BLOCKING ===========================
+// async function mainLoop() {
+//   const WORKERS = 20;
+//   const MAX_PARALLEL = 4;
+
+//   while (true) {
+//     try {
+//       const listResp = await fetchText(SOURCE_URL);
+//       const urls = listResp.ok ? parseList(listResp.text) : [];
+
+//       if (urls.length === 0) {
+//         broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
+//         await new Promise(r => setTimeout(r, 3000));
+//         continue;
+//       }
+
+//       broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
+      
+//       // Log proxy status
+//       const currentProxy = PROXY_CONFIGS[activeProxyIndex];
+//       broadcastLog(`🛡️ Using proxy: ${currentProxy.name} (${currentProxy.url})`, "info");
+      
+//       broadcastStats();
+
+//       let current = 0;
+
+//       async function worker() {
+//         while (true) {
+//           const batch = [];
+
+//           for (let i = 0; i < MAX_PARALLEL; i++) {
+//             let u = urls[current++];
+//             if (!u) break;
+//             batch.push(hitUrl(u));
+//           }
+
+//           if (batch.length === 0) break;
+
+//           await Promise.race(batch);
+//           await new Promise((r) => setTimeout(r, 5));
+//         }
+//       }
+
+//       const pool = [];
+//       for (let i = 0; i < WORKERS; i++) pool.push(worker());
+
+//       await Promise.all(pool);
+      
+//       broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
+//       broadcastStats();
+      
+//       await new Promise(r => setTimeout(r, 100));
+      
+//     } catch (err) {
+//       broadcastLog("❌ ERROR LOOP: " + err.message, "error");
+//       await new Promise(r => setTimeout(r, 5000));
+//     }
+//   }
+// }
+
+
+
+
+// ======================== SEMAPHORE FOR CONCURRENCY CONTROL ===========================
+class Semaphore {
+  constructor(maxConcurrent) {
+    this.maxConcurrent = maxConcurrent;
+    this.queue = [];
+    this.current = 0;
+  }
+
+  async acquire() {
+    return new Promise(resolve => {
+      if (this.current < this.maxConcurrent) {
+        this.current++;
+        resolve();
+      } else {
+        this.queue.push(resolve);
+      }
+    });
+  }
+
+  release() {
+    this.current--;
+    if (this.queue.length > 0) {
+      this.current++;
+      const nextResolve = this.queue.shift();
+      nextResolve();
+    }
+  }
+}
+
+// ======================== OPTIMIZED MAIN LOOP ===========================
 async function mainLoop() {
-  const WORKERS = 20;
-  const MAX_PARALLEL = 4;
+  const MAX_CONCURRENT = 60;  // Optimal: 60 concurrent requests
+  const BATCH_SIZE = 100;     // Process dalam batch 100 URL
+  const concurrencySemaphore = new Semaphore(MAX_CONCURRENT);
 
   while (true) {
     try {
@@ -446,29 +539,22 @@ async function mainLoop() {
       
       broadcastStats();
 
-      let current = 0;
-
-      async function worker() {
-        while (true) {
-          const batch = [];
-
-          for (let i = 0; i < MAX_PARALLEL; i++) {
-            let u = urls[current++];
-            if (!u) break;
-            batch.push(hitUrl(u));
-          }
-
-          if (batch.length === 0) break;
-
-          await Promise.race(batch);
-          await new Promise((r) => setTimeout(r, 5));
-        }
+      // Process dalam batch untuk feedback lebih baik
+      for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+        const batch = urls.slice(i, i + BATCH_SIZE);
+        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(urls.length / BATCH_SIZE);
+        
+        broadcastLog(`⚡ Processing batch ${batchNumber}/${totalBatches} (${batch.length} URLs)...`, "info");
+        
+        // Process semua URL dalam batch secara paralel dengan concurrency control
+        const promises = batch.map(url => 
+          processUrlWithConcurrency(url, concurrencySemaphore)
+        );
+        
+        // Tunggu SEMUA URL dalam batch selesai
+        await Promise.allSettled(promises);
       }
-
-      const pool = [];
-      for (let i = 0; i < WORKERS; i++) pool.push(worker());
-
-      await Promise.all(pool);
       
       broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
       broadcastStats();
@@ -479,6 +565,16 @@ async function mainLoop() {
       broadcastLog("❌ ERROR LOOP: " + err.message, "error");
       await new Promise(r => setTimeout(r, 5000));
     }
+  }
+}
+
+// ======================== PROCESS URL WITH CONCURRENCY CONTROL ===========================
+async function processUrlWithConcurrency(url, semaphore) {
+  await semaphore.acquire();
+  try {
+    return await hitUrl(url);
+  } finally {
+    semaphore.release();
   }
 }
 
