@@ -367,49 +367,21 @@ async function findWorkingProxy(targetUrl) {
   return currentProxy;
 }
 
-
-// ======================== DEBOUNCED STATS BROADCAST ===========================
-let statsDebounceTimer = null;
-let statsUpdatePending = false;
-
-function scheduleStatsUpdate() {
-  // Jika sudah ada update pending, skip
-  if (statsUpdatePending) return;
-  
-  statsUpdatePending = true;
-  
-  // Clear timer sebelumnya
-  if (statsDebounceTimer) {
-    clearTimeout(statsDebounceTimer);
-  }
-  
-  // Schedule update dalam 100ms (untuk batch updates)
-  statsDebounceTimer = setTimeout(() => {
-    broadcastStats();
-    statsUpdatePending = false;
-  }, 100);
-}
-
-// ======================== HIT URL (FIXED VERSION - NO DOUBLE COUNTING) ===========================
+// ======================== HIT URL ===========================
 async function hitUrl(url) {
-  const startTime = Date.now();
+  stats.totalHits++;
+  stats.lastUpdate = new Date().toISOString();
   
   // Coba direct first
   const direct = await fetchText(url);
   const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
 
   if (directOk) {
-    // ✅ INCREMENT DI SINI SAJA (tidak double)
-    stats.totalHits++;
     stats.success++;
-    stats.lastUpdate = new Date().toISOString();
     successUrls.set(url, (successUrls.get(url) || 0) + 1);
     failedUrls.delete(url);
-    
-    const duration = Date.now() - startTime;
-    broadcastLog(`✅ ${url} (Direct) [${duration}ms]`, "success");
-    scheduleStatsUpdate();
-    return { success: true, method: "direct", url, duration };
+    broadcastLog(`✅ ${url} (Direct)`, "success");
+    return { success: true, method: "direct", url };
   }
 
   // Coba dengan proxy (dengan fallback)
@@ -419,54 +391,36 @@ async function hitUrl(url) {
     const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
 
     if (proxyOk) {
-      // ✅ INCREMENT DI SINI SAJA (tidak double)
-      stats.totalHits++;
       stats.success++;
-      stats.lastUpdate = new Date().toISOString();
       successUrls.set(url, (successUrls.get(url) || 0) + 1);
       failedUrls.delete(url);
-      
-      const duration = Date.now() - startTime;
-      broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name}) [${duration}ms]`, "success");
-      scheduleStatsUpdate();
+      broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name})`, "success");
       return { 
         success: true, 
         method: "proxy", 
         url, 
         proxy: proxyInfo.config.name,
-        proxyUrl: proxyInfo.url,
-        duration
+        proxyUrl: proxyInfo.url
       };
     } else {
       await rotateToNextProxy();
       throw new Error(`Proxy ${proxyInfo.config.name} failed with status ${proxied.status}`);
     }
   } catch (proxyErr) {
-    // ✅ INCREMENT DI SINI SAJA (tidak double)
-    stats.totalHits++;
     stats.failed++;
-    stats.lastUpdate = new Date().toISOString();
     failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
     successUrls.delete(url);
     
-    const duration = Date.now() - startTime;
-    let errorMsg = `❌ ${url} [${duration}ms]`;
+    let errorMsg = `❌ ${url}`;
     if (direct.status && direct.status !== 200) {
       errorMsg += ` [Direct: ${direct.status}]`;
     }
     errorMsg += ` [Proxy failed]`;
     
     broadcastLog(errorMsg, "error");
-    scheduleStatsUpdate();
-    return { 
-      success: false, 
-      url, 
-      error: proxyErr.message,
-      duration 
-    };
+    return { success: false, url, error: proxyErr.message };
   }
 }
-
 
 // ======================== WORKER NON-BLOCKING ===========================
 // async function mainLoop() {
@@ -528,103 +482,134 @@ async function hitUrl(url) {
 //   }
 // }
 
+// ======================== CONTINUOUS WORKER SYSTEM ===========================
+async function mainLoop() {
+  const WORKERS = 20;
+  const MAX_PARALLEL = 4;
+  const SOURCE_FETCH_INTERVAL = 30000; // 30 detik
+  const BATCH_DELAY = 50; // ms delay antar batch
 
+  // Global URL pool dan index
+  let urlPool = [];
+  let urlIndex = 0;
+  let isRunning = true;
 
-
-// ======================== SEMAPHORE FOR CONCURRENCY CONTROL ===========================
-class Semaphore {
-  constructor(maxConcurrent) {
-    this.maxConcurrent = maxConcurrent;
-    this.queue = [];
-    this.current = 0;
+  // Function untuk update URL pool
+  function updateUrlPool(newUrls) {
+    // Gabung dan hilangkan duplikat
+    const combined = [...new Set([...urlPool, ...newUrls])];
+    const addedCount = combined.length - urlPool.length;
+    urlPool = combined;
+    
+    if (addedCount > 0) {
+      broadcastLog(`📥 Added ${addedCount} new URLs. Total: ${urlPool.length}`, "info");
+    }
+    
+    return addedCount;
   }
 
-  async acquire() {
-    return new Promise(resolve => {
-      if (this.current < this.maxConcurrent) {
-        this.current++;
-        resolve();
-      } else {
-        this.queue.push(resolve);
+  // Function untuk get next batch (circular)
+  function getNextBatch(size) {
+    if (urlPool.length === 0) return [];
+    
+    const batch = [];
+    for (let i = 0; i < size; i++) {
+      if (urlIndex >= urlPool.length) {
+        urlIndex = 0; // Kembali ke awal (circular)
       }
-    });
+      batch.push(urlPool[urlIndex]);
+      urlIndex = (urlIndex + 1) % urlPool.length;
+    }
+    return batch;
   }
 
-  release() {
-    this.current--;
-    if (this.queue.length > 0) {
-      this.current++;
-      const nextResolve = this.queue.shift();
-      nextResolve();
+  // Continuous worker function
+  async function continuousWorker(workerId) {
+    broadcastLog(`🚀 Worker ${workerId} started`, "info");
+    
+    while (isRunning) {
+      try {
+        // Jika tidak ada URL, tunggu sebentar
+        if (urlPool.length === 0) {
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        
+        // Ambil batch URL
+        const batch = getNextBatch(MAX_PARALLEL);
+        
+        if (batch.length === 0) {
+          await new Promise(r => setTimeout(r, 100));
+          continue;
+        }
+        
+        // Proses batch secara paralel
+        const promises = batch.map(url => hitUrl(url));
+        await Promise.all(promises);
+        
+        // Delay kecil antar batch (rate limiting)
+        await new Promise(r => setTimeout(r, BATCH_DELAY));
+        
+      } catch (error) {
+        broadcastLog(`⚠️ Worker ${workerId} error: ${error.message}`, "error");
+        await new Promise(r => setTimeout(r, 5000)); // Tunggu 5 detik jika error
+      }
     }
   }
-}
 
-// ======================== OPTIMIZED MAIN LOOP ===========================
-async function mainLoop() {
-  const MAX_CONCURRENT = 60;  // Optimal: 60 concurrent requests
-  const BATCH_SIZE = 100;     // Process dalam batch 100 URL
-  const concurrencySemaphore = new Semaphore(MAX_CONCURRENT);
-
-  while (true) {
+  // Function untuk fetch source dan update pool
+  async function fetchAndUpdateSource() {
     try {
       const listResp = await fetchText(SOURCE_URL);
       const urls = listResp.ok ? parseList(listResp.text) : [];
-
+      
       if (urls.length === 0) {
-        broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
-        await new Promise(r => setTimeout(r, 3000));
-        continue;
-      }
-
-      broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
-      
-      // Log proxy status
-      const currentProxy = PROXY_CONFIGS[activeProxyIndex];
-      broadcastLog(`🛡️ Using proxy: ${currentProxy.name} (${currentProxy.url})`, "info");
-      
-      broadcastStats();
-
-      // Process dalam batch untuk feedback lebih baik
-      for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-        const batch = urls.slice(i, i + BATCH_SIZE);
-        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-        const totalBatches = Math.ceil(urls.length / BATCH_SIZE);
-        
-        broadcastLog(`⚡ Processing batch ${batchNumber}/${totalBatches} (${batch.length} URLs)...`, "info");
-        
-        // Process semua URL dalam batch secara paralel dengan concurrency control
-        const promises = batch.map(url => 
-          processUrlWithConcurrency(url, concurrencySemaphore)
-        );
-        
-        // Tunggu SEMUA URL dalam batch selesai
-        await Promise.allSettled(promises);
+        broadcastLog("📭 Source empty, will retry in 30 seconds", "info");
+        return 0;
       }
       
-      broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
+      const added = updateUrlPool(urls);
+      if (added > 0 || urls.length > 0) {
+        broadcastLog(`📌 Loaded ${urls.length} URLs from source`, "info");
+      }
+      
+      return urls.length;
+      
+    } catch (error) {
+      broadcastLog(`❌ Error fetching source: ${error.message}`, "error");
+      return 0;
+    }
+  }
+
+  // Start semua workers
+  broadcastLog(`🚀 Starting ${WORKERS} continuous workers...`, "info");
+  for (let i = 0; i < WORKERS; i++) {
+    // Start worker dengan sedikit stagger
+    setTimeout(() => {
+      continuousWorker(i).catch(err => {
+        broadcastLog(`❌ Worker ${i} crashed: ${err.message}`, "error");
+      });
+    }, i * 100);
+  }
+
+  // Main loop untuk fetch source secara periodic
+  while (isRunning) {
+    try {
+      // Fetch source setiap 30 detik
+      await fetchAndUpdateSource();
+      
+      // Broadcast stats secara periodic
       broadcastStats();
       
-      await new Promise(r => setTimeout(r, 100));
+      // Tunggu 30 detik sebelum fetch lagi
+      await new Promise(r => setTimeout(r, SOURCE_FETCH_INTERVAL));
       
-    } catch (err) {
-      broadcastLog("❌ ERROR LOOP: " + err.message, "error");
-      await new Promise(r => setTimeout(r, 5000));
+    } catch (error) {
+      broadcastLog(`❌ Main loop error: ${error.message}`, "error");
+      await new Promise(r => setTimeout(r, 10000));
     }
   }
 }
-
-// ======================== PROCESS URL WITH CONCURRENCY CONTROL ===========================
-async function processUrlWithConcurrency(url, semaphore) {
-  await semaphore.acquire();
-  try {
-    return await hitUrl(url);
-  } finally {
-    semaphore.release();
-  }
-}
-
-
 // ======================== DASHBOARD WEB ===========================
 const app = express();
 
