@@ -368,6 +368,60 @@ async function findWorkingProxy(targetUrl) {
 }
 
 // ======================== HIT URL ===========================
+// async function hitUrl(url) {
+//   stats.totalHits++;
+//   stats.lastUpdate = new Date().toISOString();
+  
+//   // Coba direct first
+//   const direct = await fetchText(url);
+//   const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
+
+//   if (directOk) {
+//     stats.success++;
+//     successUrls.set(url, (successUrls.get(url) || 0) + 1);
+//     failedUrls.delete(url);
+//     broadcastLog(`✅ ${url} (Direct)`, "success");
+//     return { success: true, method: "direct", url };
+//   }
+
+//   // Coba dengan proxy (dengan fallback)
+//   try {
+//     const proxyInfo = await findWorkingProxy(url);
+//     const proxied = await fetchText(proxyInfo.url);
+//     const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
+
+//     if (proxyOk) {
+//       stats.success++;
+//       successUrls.set(url, (successUrls.get(url) || 0) + 1);
+//       failedUrls.delete(url);
+//       broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name})`, "success");
+//       return { 
+//         success: true, 
+//         method: "proxy", 
+//         url, 
+//         proxy: proxyInfo.config.name,
+//         proxyUrl: proxyInfo.url
+//       };
+//     } else {
+//       await rotateToNextProxy();
+//       throw new Error(`Proxy ${proxyInfo.config.name} failed with status ${proxied.status}`);
+//     }
+//   } catch (proxyErr) {
+//     stats.failed++;
+//     failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
+//     successUrls.delete(url);
+    
+//     let errorMsg = `❌ ${url}`;
+//     if (direct.status && direct.status !== 200) {
+//       errorMsg += ` [Direct: ${direct.status}]`;
+//     }
+//     errorMsg += ` [Proxy failed]`;
+    
+//     broadcastLog(errorMsg, "error");
+//     return { success: false, url, error: proxyErr.message };
+//   }
+// }
+
 async function hitUrl(url) {
   stats.totalHits++;
   stats.lastUpdate = new Date().toISOString();
@@ -381,6 +435,9 @@ async function hitUrl(url) {
     successUrls.set(url, (successUrls.get(url) || 0) + 1);
     failedUrls.delete(url);
     broadcastLog(`✅ ${url} (Direct)`, "success");
+    
+    // ⭐ BROADCAST STATS REAL-TIME
+    broadcastStats();
     return { success: true, method: "direct", url };
   }
 
@@ -395,6 +452,9 @@ async function hitUrl(url) {
       successUrls.set(url, (successUrls.get(url) || 0) + 1);
       failedUrls.delete(url);
       broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name})`, "success");
+      
+      // ⭐ BROADCAST STATS REAL-TIME
+      broadcastStats();
       return { 
         success: true, 
         method: "proxy", 
@@ -418,9 +478,13 @@ async function hitUrl(url) {
     errorMsg += ` [Proxy failed]`;
     
     broadcastLog(errorMsg, "error");
+    
+    // ⭐ BROADCAST STATS REAL-TIME
+    broadcastStats();
     return { success: false, url, error: proxyErr.message };
   }
 }
+
 
 // ======================== WORKER NON-BLOCKING ===========================
 // async function mainLoop() {
