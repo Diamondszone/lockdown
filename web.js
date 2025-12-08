@@ -367,7 +367,30 @@ async function findWorkingProxy(targetUrl) {
   return currentProxy;
 }
 
-// ======================== HIT URL (FIXED VERSION) ===========================
+
+// ======================== DEBOUNCED STATS BROADCAST ===========================
+let statsDebounceTimer = null;
+let statsUpdatePending = false;
+
+function scheduleStatsUpdate() {
+  // Jika sudah ada update pending, skip
+  if (statsUpdatePending) return;
+  
+  statsUpdatePending = true;
+  
+  // Clear timer sebelumnya
+  if (statsDebounceTimer) {
+    clearTimeout(statsDebounceTimer);
+  }
+  
+  // Schedule update dalam 100ms (untuk batch updates)
+  statsDebounceTimer = setTimeout(() => {
+    broadcastStats();
+    statsUpdatePending = false;
+  }, 100);
+}
+
+// ======================== HIT URL (FIXED VERSION - NO DOUBLE COUNTING) ===========================
 async function hitUrl(url) {
   const startTime = Date.now();
   
@@ -385,6 +408,7 @@ async function hitUrl(url) {
     
     const duration = Date.now() - startTime;
     broadcastLog(`✅ ${url} (Direct) [${duration}ms]`, "success");
+    scheduleStatsUpdate();
     return { success: true, method: "direct", url, duration };
   }
 
@@ -404,6 +428,7 @@ async function hitUrl(url) {
       
       const duration = Date.now() - startTime;
       broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name}) [${duration}ms]`, "success");
+      scheduleStatsUpdate();
       return { 
         success: true, 
         method: "proxy", 
@@ -432,6 +457,7 @@ async function hitUrl(url) {
     errorMsg += ` [Proxy failed]`;
     
     broadcastLog(errorMsg, "error");
+    scheduleStatsUpdate();
     return { 
       success: false, 
       url, 
@@ -440,6 +466,7 @@ async function hitUrl(url) {
     };
   }
 }
+
 
 // ======================== WORKER NON-BLOCKING ===========================
 // async function mainLoop() {
