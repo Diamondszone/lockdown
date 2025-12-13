@@ -215,6 +215,39 @@ function isCaptcha(body) {
   );
 }
 
+
+
+function tryParseJson(text) {
+  if (!text) return null;
+
+  // buang BOM + trim
+  const cleaned = String(text).replace(/^\uFEFF/, "").trim();
+
+  // 1) parse full body
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+
+  // 2) fallback: ambil {...} pertama dari body (kalau ada noise)
+  const first = cleaned.indexOf("{");
+  const last  = cleaned.lastIndexOf("}");
+  if (first === -1 || last === -1 || last <= first) return null;
+
+  const slice = cleaned.slice(first, last + 1);
+  try {
+    return JSON.parse(slice);
+  } catch {
+    return null;
+  }
+}
+
+function isVerifyOkJson(text) {
+  const obj = tryParseJson(text);
+  if (!obj || typeof obj !== "object") return false;
+  return obj.ok === true && obj.action === "verify";
+}
+
+
 function getStatusText(status) {
   const statusMap = {
     0: 'Network Error',
@@ -368,59 +401,6 @@ async function findWorkingProxy(targetUrl) {
 }
 
 // ======================== HIT URL ===========================
-// async function hitUrl(url) {
-//   stats.totalHits++;
-//   stats.lastUpdate = new Date().toISOString();
-  
-//   // Coba direct first
-//   const direct = await fetchText(url);
-//   const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
-
-//   if (directOk) {
-//     stats.success++;
-//     successUrls.set(url, (successUrls.get(url) || 0) + 1);
-//     failedUrls.delete(url);
-//     broadcastLog(`✅ ${url} (Direct)`, "success");
-//     return { success: true, method: "direct", url };
-//   }
-
-//   // Coba dengan proxy (dengan fallback)
-//   try {
-//     const proxyInfo = await findWorkingProxy(url);
-//     const proxied = await fetchText(proxyInfo.url);
-//     const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
-
-//     if (proxyOk) {
-//       stats.success++;
-//       successUrls.set(url, (successUrls.get(url) || 0) + 1);
-//       failedUrls.delete(url);
-//       broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name})`, "success");
-//       return { 
-//         success: true, 
-//         method: "proxy", 
-//         url, 
-//         proxy: proxyInfo.config.name,
-//         proxyUrl: proxyInfo.url
-//       };
-//     } else {
-//       await rotateToNextProxy();
-//       throw new Error(`Proxy ${proxyInfo.config.name} failed with status ${proxied.status}`);
-//     }
-//   } catch (proxyErr) {
-//     stats.failed++;
-//     failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
-//     successUrls.delete(url);
-    
-//     let errorMsg = `❌ ${url}`;
-//     if (direct.status && direct.status !== 200) {
-//       errorMsg += ` [Direct: ${direct.status}]`;
-//     }
-//     errorMsg += ` [Proxy failed]`;
-    
-//     broadcastLog(errorMsg, "error");
-//     return { success: false, url, error: proxyErr.message };
-//   }
-// }
 
 async function hitUrl(url) {
   stats.totalHits++;
@@ -428,7 +408,13 @@ async function hitUrl(url) {
   
   // Coba direct first
   const direct = await fetchText(url);
-  const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
+  // const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
+  const directOk =
+  direct.ok &&
+  direct.status === 200 &&
+  !isCaptcha(direct.text) &&
+  isVerifyOkJson(direct.text);
+
 
   if (directOk) {
     stats.success++;
@@ -445,7 +431,13 @@ async function hitUrl(url) {
   try {
     const proxyInfo = await findWorkingProxy(url);
     const proxied = await fetchText(proxyInfo.url);
-    const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
+    // const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
+    const proxyOk =
+    proxied.ok &&
+    proxied.status === 200 &&
+    !isCaptcha(proxied.text) &&
+    isVerifyOkJson(proxied.text);
+
 
     if (proxyOk) {
       stats.success++;
@@ -485,66 +477,6 @@ async function hitUrl(url) {
   }
 }
 
-
-// ======================== WORKER NON-BLOCKING ===========================
-// async function mainLoop() {
-//   const WORKERS = 20;
-//   const MAX_PARALLEL = 4;
-
-//   while (true) {
-//     try {
-//       const listResp = await fetchText(SOURCE_URL);
-//       const urls = listResp.ok ? parseList(listResp.text) : [];
-
-//       if (urls.length === 0) {
-//         broadcastLog("❌ SOURCE kosong → ulangi loop...", "error");
-//         await new Promise(r => setTimeout(r, 3000));
-//         continue;
-//       }
-
-//       broadcastLog(`📌 Memuat ${urls.length} URL…`, "info");
-      
-//       // Log proxy status
-//       const currentProxy = PROXY_CONFIGS[activeProxyIndex];
-//       broadcastLog(`🛡️ Using proxy: ${currentProxy.name} (${currentProxy.url})`, "info");
-      
-//       broadcastStats();
-
-//       let current = 0;
-
-//       async function worker() {
-//         while (true) {
-//           const batch = [];
-
-//           for (let i = 0; i < MAX_PARALLEL; i++) {
-//             let u = urls[current++];
-//             if (!u) break;
-//             batch.push(hitUrl(u));
-//           }
-
-//           if (batch.length === 0) break;
-
-//           await Promise.race(batch);
-//           await new Promise((r) => setTimeout(r, 5));
-//         }
-//       }
-
-//       const pool = [];
-//       for (let i = 0; i < WORKERS; i++) pool.push(worker());
-
-//       await Promise.all(pool);
-      
-//       broadcastLog(`🔄 Loop selesai, mulai ulang...`, "info");
-//       broadcastStats();
-      
-//       await new Promise(r => setTimeout(r, 100));
-      
-//     } catch (err) {
-//       broadcastLog("❌ ERROR LOOP: " + err.message, "error");
-//       await new Promise(r => setTimeout(r, 5000));
-//     }
-//   }
-// }
 
 // ======================== CONTINUOUS WORKER SYSTEM ===========================
 async function mainLoop() {
