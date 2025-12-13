@@ -1,6 +1,8 @@
 // web.js
 import express from "express";
 import axios from "axios";
+import http from "http";
+import https from "https";
 
 // ======================== CONFIG ===========================
 const SOURCE_URL =
@@ -9,7 +11,30 @@ const SOURCE_URL =
 
 const DEBUG_MODE = process.env.DEBUG_MODE === "true";
 
-// PROXY CONFIGS DENGAN FALLBACK
+// WAJIB: isi domain milik kamu. contoh:
+// ALLOW_DOMAINS="ampnyapunyaku.top,api.ampnyapunyaku.top"
+// default: host dari SOURCE_URL
+const SOURCE_HOST = safeHostname(SOURCE_URL);
+const ALLOW_DOMAINS = (process.env.ALLOW_DOMAINS || SOURCE_HOST)
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+// Worker & concurrency (FIX UTAMA: batasi total inflight)
+const WORKERS = clampInt(process.env.WORKERS, 10, 1, 50);            // dulu 20
+const MAX_PARALLEL = clampInt(process.env.MAX_PARALLEL, 4, 1, 20);
+const GLOBAL_MAX_INFLIGHT = clampInt(process.env.GLOBAL_MAX_INFLIGHT, 12, 1, 50); // FIX: cap global
+
+const SOURCE_FETCH_INTERVAL = clampInt(process.env.SOURCE_FETCH_INTERVAL, 30000, 5000, 300000);
+const BATCH_DELAY = clampInt(process.env.BATCH_DELAY, 80, 0, 5000);
+
+// Per-URL cooldown supaya tidak spam endpoint sendiri
+const MIN_URL_INTERVAL_MS = clampInt(process.env.MIN_URL_INTERVAL_MS, 5000, 0, 600000);
+
+// HTTP settings
+const REQUEST_TIMEOUT_MS = clampInt(process.env.REQUEST_TIMEOUT_MS, 15000, 1000, 60000);
+
+// PROXY CONFIGS DENGAN FALLBACK (kamu minta format "single" jangan diubah)
 const PROXY_CONFIGS = [
   {
     url: process.env.PRIMARY_PROXY || "https://cors-anywhere-railway-production.up.railway.app",
@@ -38,113 +63,19 @@ const PROXY_CONFIGS = [
   }
 ];
 
-// ======================== PROXY MANAGEMENT (PINDHKAN KE SINI!) ===========================
+// ======================== PROXY MANAGEMENT ===========================
 let activeProxyIndex = 0;
-let proxyHealth = new Map();
 
-// ======================== DEBUG UTILITIES ===========================
-if (DEBUG_MODE) {
-  function testEncoding() {
-    console.log("\n🔍 === DEBUG: TESTING URL ENCODING ===");
-    
-    const testUrls = [
-      "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x"
-    ];
-    
-    for (const url of testUrls) {
-      console.log(`\n📝 Original URL: ${url}`);
-      console.log(`🔢 Length: ${url.length} characters`);
-      
-      // Test encodeURIComponent
-      const encoded = encodeURIComponent(url);
-      console.log(`🔐 Encoded: ${encoded.substring(0, 80)}...`);
-      console.log(`📏 Encoded length: ${encoded.length} characters`);
-      
-      // Verifikasi encoding
-      console.log(`✅ Contains 'https%3A%2F%2F'? ${encoded.includes('https%3A%2F%2F')}`);
-      console.log(`✅ Contains '%3F' for '?'? ${encoded.includes('%3F')}`);
-      console.log(`✅ Contains '%26' for '&'? ${encoded.includes('%26')}`);
-      
-      // Test semua format proxy
-      console.log(`\n🔄 Testing proxy formats for: ${url.substring(0, 50)}...`);
-      
-      const testConfigs = [
-        { name: "Railway (double)", url: PROXY_CONFIGS[0].url, format: "double" },
-        { name: "Vercel (single)", url: PROXY_CONFIGS[1].url, format: "single" },
-        { name: "AllOrigins (encoded)", url: PROXY_CONFIGS[2].url, format: "encoded" },
-        { name: "Cloudflare Worker (double)", url: PROXY_CONFIGS[3].url, format: "double" },
-        { name: "Onme cloud (double)", url: PROXY_CONFIGS[4].url, format: "double" }
-      ];
-      
-      for (const config of testConfigs) {
-        let proxyUrl;
-        if (config.format === "single") {
-          const cleanUrl = url.replace(/^https?:\/\//, '');
-          proxyUrl = `${config.url}/https:/${cleanUrl}`;
-          console.log(`   ${config.name}: ${proxyUrl.substring(0, 80)}...`);
-        } else if (config.format === "double") {
-          proxyUrl = `${config.url}/${url}`;
-          console.log(`   ${config.name}: ${proxyUrl.substring(0, 80)}...`);
-        } else if (config.format === "encoded") {
-          proxyUrl = `${config.url}${encodeURIComponent(url)}`;
-          console.log(`   ${config.name}: ${proxyUrl.substring(0, 80)}...`);
-        }
-      }
-    }
-    console.log("✅ === DEBUG: ENCODING TEST COMPLETE ===\n");
-  }
-  
-  // Fungsi helper untuk test proxy builder (tanpa dependency ke fungsi lain)
-  function testProxyBuilder() {
-    console.log("\n🔧 === DEBUG: TESTING PROXY BUILDER FUNCTIONS ===");
-    
-    const testUrl = "https://tessa.cz/wp-includes/rss-functions.php?&action=verify&key=sitecore&token=0T9dxcLmwHGOhvEktCWjA8oVdoa01ZJKq0C2XOb9ZEUA2OL8f2u3JJfXzjyIge2x";
-    
-    console.log(`Test URL: ${testUrl}`);
-    console.log(`Test URL length: ${testUrl.length} chars`);
-    
-    // Versi sederhana dari buildProxyUrlWithFallback untuk testing
-    function simpleBuildProxyUrl(targetUrl, config) {
-      if (config.format === "single") {
-        const cleanUrl = targetUrl.replace(/^https?:\/\//, '');
-        return `${config.url}/https:/${cleanUrl}`;
-      } else if (config.format === "double") {
-        return `${config.url}/${targetUrl}`;
-      } else if (config.format === "encoded") {
-        return `${config.url}${encodeURIComponent(targetUrl)}`;
-      }
-      return `${config.url}/${targetUrl}`;
-    }
-    
-    // Test dengan setiap proxy
-    for (let i = 0; i < PROXY_CONFIGS.length; i++) {
-      const config = PROXY_CONFIGS[i];
-      const proxyUrl = simpleBuildProxyUrl(testUrl, config);
-      
-      console.log(`\n📡 Proxy ${i + 1}: ${config.name}`);
-      console.log(`   Format: ${config.format}`);
-      console.log(`   URL: ${proxyUrl.substring(0, 100)}...`);
-      console.log(`   Length: ${proxyUrl.length} chars`);
-      
-      // Verifikasi khusus untuk encoded format
-      if (config.format === "encoded") {
-        console.log(`   ✅ Contains '?url='? ${proxyUrl.includes('?url=')}`);
-        console.log(`   ✅ Contains encoded 'https%3A'? ${proxyUrl.includes('https%3A')}`);
-      }
-    }
-    
-    console.log("✅ === DEBUG: PROXY BUILDER TEST COMPLETE ===\n");
-  }
-  
-  // Jalankan test
-  testEncoding();
-  testProxyBuilder();
-}
+// ======================== HTTP AGENTS (lebih stabil) ===========================
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 // ======================== DATA STRUCTURE ===========================
 const clients = [];
 const successUrls = new Map(); // url -> count
-const failedUrls = new Map();   // url -> count
+const failedUrls = new Map();  // url -> count
+const lastHitAt = new Map();   // url -> ms
+
 let stats = {
   totalHits: 0,
   success: 0,
@@ -152,18 +83,88 @@ let stats = {
   lastUpdate: new Date().toISOString()
 };
 
+// ======================== HELPERS ===========================
+function clampInt(v, def, min, max) {
+  const n = Number.parseInt(String(v ?? ""), 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, n));
+}
 
-// ======================== BROADCAST SYSTEM ===========================
+function safeHostname(u) {
+  try { return new URL(u).hostname; } catch { return ""; }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function parseList(txt) {
+  return (txt || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function normalizeUrl(u) {
+  try {
+    const x = new URL(u);
+    if (!/^https?:$/.test(x.protocol)) return null;
+    return x.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedTarget(u) {
+  try {
+    const host = new URL(u).hostname.toLowerCase();
+    return ALLOW_DOMAINS.some((d) => host === d || host.endsWith("." + d));
+  } catch {
+    return false;
+  }
+}
+
+function isCaptcha(body) {
+  if (!body) return false;
+  const t = String(body).toLowerCase();
+  return (
+    t.includes("captcha") ||
+    t.includes("verify you are human") ||
+    t.includes("verification") ||
+    t.includes("robot") ||
+    t.includes("cloudflare")
+  );
+}
+
+function tryParseJson(text) {
+  if (!text) return null;
+  const cleaned = String(text).replace(/^\uFEFF/, "").trim();
+
+  try { return JSON.parse(cleaned); } catch {}
+
+  const first = cleaned.indexOf("{");
+  const last = cleaned.lastIndexOf("}");
+  if (first === -1 || last === -1 || last <= first) return null;
+
+  const slice = cleaned.slice(first, last + 1);
+  try { return JSON.parse(slice); } catch { return null; }
+}
+
+function isVerifyOkJson(text) {
+  const obj = tryParseJson(text);
+  return !!(obj && typeof obj === "object" && obj.ok === true && obj.action === "verify");
+}
+
+// ======================== SSE BROADCAST ===========================
 function broadcastLog(msg, type = "info") {
   const line = {
-    id: Date.now(),
+    id: Date.now() + Math.floor(Math.random() * 1000),
     time: new Date().toLocaleTimeString(),
     message: msg,
-    type: type // info, success, error
+    type
   };
-  
-  console.log(`[${line.time}] ${msg}`);
 
+  console.log(`[${line.time}] ${msg}`);
   for (const client of clients) {
     client.res.write(`data: ${JSON.stringify(line)}\n\n`);
   }
@@ -179,162 +180,63 @@ function broadcastStats() {
       uniqueFailed: failedUrls.size
     }
   };
-  
+
   for (const client of clients) {
     client.res.write(`data: ${JSON.stringify(statData)}\n\n`);
   }
 }
 
-// ======================== PARSER ===========================
-function parseList(txt) {
-  return (txt || "")
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function isJson(body) {
-  if (!body) return false;
-  try {
-    JSON.parse(body);
-    return true;
-  } catch {
-    return false;
+// Keepalive SSE biar tidak gampang putus
+setInterval(() => {
+  for (const client of clients) {
+    client.res.write(`: keepalive ${Date.now()}\n\n`);
   }
-}
+}, 15000);
 
-function isCaptcha(body) {
-  if (!body) return false;
-  const t = body.toLowerCase();
-  return (
-    t.includes("captcha") ||
-    t.includes("verify you are human") ||
-    t.includes("verification") ||
-    t.includes("robot") ||
-    t.includes("cloudflare")
-  );
-}
-
-
-
-function tryParseJson(text) {
-  if (!text) return null;
-
-  // buang BOM + trim
-  const cleaned = String(text).replace(/^\uFEFF/, "").trim();
-
-  // 1) parse full body
-  try {
-    return JSON.parse(cleaned);
-  } catch {}
-
-  // 2) fallback: ambil {...} pertama dari body (kalau ada noise)
-  const first = cleaned.indexOf("{");
-  const last  = cleaned.lastIndexOf("}");
-  if (first === -1 || last === -1 || last <= first) return null;
-
-  const slice = cleaned.slice(first, last + 1);
-  try {
-    return JSON.parse(slice);
-  } catch {
-    return null;
-  }
-}
-
-function isVerifyOkJson(text) {
-  const obj = tryParseJson(text);
-  if (!obj || typeof obj !== "object") return false;
-  return obj.ok === true && obj.action === "verify";
-}
-
-
-function getStatusText(status) {
-  const statusMap = {
-    0: 'Network Error',
-    200: 'OK',
-    201: 'Created',
-    204: 'No Content',
-    301: 'Moved Permanently',
-    302: 'Found',
-    304: 'Not Modified',
-    400: 'Bad Request',
-    401: 'Unauthorized',
-    403: 'Forbidden',
-    404: 'Not Found',
-    405: 'Method Not Allowed',
-    408: 'Request Timeout',
-    429: 'Too Many Requests',
-    500: 'Internal Server Error',
-    502: 'Bad Gateway',
-    503: 'Service Unavailable',
-    504: 'Gateway Timeout'
-  };
-  return statusMap[status] || `Status ${status}`;
-}
-
-// ======================== FETCH TEXT ===========================
+// ======================== FETCH TEXT (stabil + agent) ===========================
 const fetchText = async (url) => {
   try {
     const resp = await axios.get(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 15000,
+      httpAgent,
+      httpsAgent,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/plain,*/*",
+      },
+      timeout: REQUEST_TIMEOUT_MS,
       validateStatus: () => true,
+      transformResponse: [(d) => d], // penting: jangan auto-parse JSON
       responseType: "text",
+      maxRedirects: 5,
     });
+
+    const text = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
 
     return {
       ok: true,
       status: resp.status,
       statusText: resp.statusText,
-      text: typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data),
+      text,
     };
   } catch (e) {
-    return { 
-      ok: false, 
-      error: e.message,
+    return {
+      ok: false,
       status: 0,
-      statusText: e.message
+      statusText: e?.message || "Network error",
+      error: e?.message || "Network error",
+      text: ""
     };
   }
 };
 
-// ======================== PROXY TESTER ===========================
-
-async function testProxy(proxyUrl, originalUrl) {
-  try {
-    const response = await axios.get(proxyUrl, {
-      timeout: 10000, // Naikkan ke 10 detik
-      validateStatus: (status) => status === 200, // HANYA terima 200
-      headers: { 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json"
-      }
-    });
-    
-    return {
-      works: true, // Jika sampai sini, status sudah 200
-      status: response.status,
-      url: proxyUrl,
-      dataLength: response.data?.length || 0
-    };
-  } catch (err) {
-    return { 
-      works: false, 
-      error: err.message,
-      status: err.response?.status || 0,
-      url: proxyUrl
-    };
-  }
-}
-
-// ======================== PROXY BUILDER WITH FALLBACK ===========================
+// ======================== PROXY BUILDER (tidak ubah format single) ===========================
 function buildProxyUrlWithFallback(targetUrl) {
   const config = PROXY_CONFIGS[activeProxyIndex];
-  
+
   let proxyUrl;
   if (config.format === "single") {
-    const cleanUrl = targetUrl.replace(/^https?:\/\//, '');
-    proxyUrl = `${config.url}/https:/${cleanUrl}`;
+    const cleanUrl = targetUrl.replace(/^https?:\/\//, "");
+    proxyUrl = `${config.url}/https:/${cleanUrl}`;   // sesuai versi kamu (tidak diubah)
   } else if (config.format === "double") {
     proxyUrl = `${config.url}/${targetUrl}`;
   } else if (config.format === "encoded") {
@@ -342,275 +244,258 @@ function buildProxyUrlWithFallback(targetUrl) {
   } else {
     proxyUrl = `${config.url}/${targetUrl}`;
   }
-  
-  return {
-    url: proxyUrl,
-    config: config,
-    index: activeProxyIndex
-  };
+
+  return { url: proxyUrl, config, index: activeProxyIndex };
+}
+
+// Proxy test (hanya 200)
+async function testProxy(proxyUrl) {
+  try {
+    const response = await axios.get(proxyUrl, {
+      httpAgent,
+      httpsAgent,
+      timeout: 10000,
+      validateStatus: (status) => status === 200,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json,text/plain,*/*"
+      },
+      transformResponse: [(d) => d],
+      responseType: "text",
+      maxRedirects: 5,
+    });
+
+    return { works: true, status: response.status };
+  } catch (err) {
+    return { works: false, status: err.response?.status || 0, error: err.message };
+  }
 }
 
 async function rotateToNextProxy() {
   activeProxyIndex = (activeProxyIndex + 1) % PROXY_CONFIGS.length;
-  const newConfig = PROXY_CONFIGS[activeProxyIndex];
-  broadcastLog(`🔄 Switching to proxy: ${newConfig.name}`, "info");
-  return newConfig;
+  broadcastLog(`🔄 Switching to proxy: ${PROXY_CONFIGS[activeProxyIndex].name}`, "info");
+  return PROXY_CONFIGS[activeProxyIndex];
 }
 
 async function findWorkingProxy(targetUrl) {
-  // Coba proxy yang sedang aktif dulu
-  const currentProxy = buildProxyUrlWithFallback(targetUrl);
-  const testResult = await testProxy(currentProxy.url, targetUrl);
-  
-  if (testResult.works) {
-    return currentProxy;
-  }
-  
-  // Jika gagal, coba semua proxy satu per satu
+  // Test active dulu
+  const current = buildProxyUrlWithFallback(targetUrl);
+  const t0 = await testProxy(current.url);
+  if (t0.works) return current;
+
+  // Coba yang lain satu-satu
   for (let i = 0; i < PROXY_CONFIGS.length; i++) {
     if (i === activeProxyIndex) continue;
-    
-    const config = PROXY_CONFIGS[i];
-    let testUrl;
-    
-    if (config.format === "single") {
-      const cleanUrl = targetUrl.replace(/^https?:\/\//, '');
-      testUrl = `${config.url}/https:/${cleanUrl}`;
-    } else if (config.format === "double") {
-      testUrl = `${config.url}/${targetUrl}`;
-    } else if (config.format === "encoded") {
-      testUrl = `${config.url}${encodeURIComponent(targetUrl)}`;
-    } else {
-      testUrl = `${config.url}/${targetUrl}`;
-    }
-    
-    const testResult = await testProxy(testUrl, targetUrl);
-    
-    if (testResult.works) {
-      activeProxyIndex = i;
-      return {
-        url: testUrl,
-        config: config,
-        index: i
-      };
-    }
+    const prev = activeProxyIndex;
+    activeProxyIndex = i;
+    const candidate = buildProxyUrlWithFallback(targetUrl);
+    const tr = await testProxy(candidate.url);
+    if (tr.works) return candidate;
+    activeProxyIndex = prev; // restore kalau gagal
   }
-  
-  // Jika semua gagal, tetap gunakan yang pertama
-  return currentProxy;
+
+  // fallback: pakai current walaupun gagal
+  return current;
 }
 
-// ======================== HIT URL ===========================
-
+// ======================== HIT URL (guardrail + cooldown) ===========================
 async function hitUrl(url) {
+  // GUARDRAIL: hanya allowlist (domain milikmu)
+  if (!isAllowedTarget(url)) {
+    // jangan masuk statistik, hanya log sekali-sekali
+    if (DEBUG_MODE) broadcastLog(`⛔ Skipped (not allowlisted): ${url}`, "info");
+    return { skipped: true };
+  }
+
+  // cooldown per URL
+  const last = lastHitAt.get(url) || 0;
+  const now = Date.now();
+  if (MIN_URL_INTERVAL_MS > 0 && now - last < MIN_URL_INTERVAL_MS) {
+    return { skipped: true };
+  }
+  lastHitAt.set(url, now);
+
   stats.totalHits++;
   stats.lastUpdate = new Date().toISOString();
-  
-  // Coba direct first
-  const direct = await fetchText(url);
-  // const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isJson(direct.text);
-  const directOk =
-  direct.ok &&
-  direct.status === 200 &&
-  !isCaptcha(direct.text) &&
-  isVerifyOkJson(direct.text);
 
+  // direct first
+  const direct = await fetchText(url);
+  const directOk =
+    direct.ok &&
+    direct.status === 200 &&
+    !isCaptcha(direct.text) &&
+    isVerifyOkJson(direct.text);
 
   if (directOk) {
     stats.success++;
     successUrls.set(url, (successUrls.get(url) || 0) + 1);
     failedUrls.delete(url);
     broadcastLog(`✅ ${url} (Direct)`, "success");
-    
-    // ⭐ BROADCAST STATS REAL-TIME
     broadcastStats();
-    return { success: true, method: "direct", url };
+    return { success: true, method: "direct" };
   }
 
-  // Coba dengan proxy (dengan fallback)
+  // proxy fallback (tetap untuk domain sendiri)
   try {
     const proxyInfo = await findWorkingProxy(url);
     const proxied = await fetchText(proxyInfo.url);
-    // const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isJson(proxied.text);
-    const proxyOk =
-    proxied.ok &&
-    proxied.status === 200 &&
-    !isCaptcha(proxied.text) &&
-    isVerifyOkJson(proxied.text);
 
+    const proxyOk =
+      proxied.ok &&
+      proxied.status === 200 &&
+      !isCaptcha(proxied.text) &&
+      isVerifyOkJson(proxied.text);
 
     if (proxyOk) {
       stats.success++;
       successUrls.set(url, (successUrls.get(url) || 0) + 1);
       failedUrls.delete(url);
       broadcastLog(`✅ ${url} (Proxy: ${proxyInfo.config.name})`, "success");
-      
-      // ⭐ BROADCAST STATS REAL-TIME
       broadcastStats();
-      return { 
-        success: true, 
-        method: "proxy", 
-        url, 
-        proxy: proxyInfo.config.name,
-        proxyUrl: proxyInfo.url
-      };
-    } else {
-      await rotateToNextProxy();
-      throw new Error(`Proxy ${proxyInfo.config.name} failed with status ${proxied.status}`);
+      return { success: true, method: "proxy", proxy: proxyInfo.config.name };
     }
-  } catch (proxyErr) {
+
+    // kalau proxy gagal, rotasi untuk percobaan selanjutnya
+    await rotateToNextProxy();
+    throw new Error(`Proxy failed status=${proxied.status}`);
+  } catch (e) {
     stats.failed++;
     failedUrls.set(url, (failedUrls.get(url) || 0) + 1);
-    successUrls.delete(url);
-    
-    let errorMsg = `❌ ${url}`;
-    if (direct.status && direct.status !== 200) {
-      errorMsg += ` [Direct: ${direct.status}]`;
-    }
-    errorMsg += ` [Proxy failed]`;
-    
-    broadcastLog(errorMsg, "error");
-    
-    // ⭐ BROADCAST STATS REAL-TIME
+
+    // NOTE: jangan hapus success history total (lebih masuk akal untuk dashboard).
+    // Kalau kamu ingin "state realtime", barulah hapus.
+    // successUrls.delete(url);
+
+    const reason = direct.status ? `Direct:${direct.status}` : `DirectErr`;
+    broadcastLog(`❌ ${url} [${reason}] [Proxy failed]`, "error");
     broadcastStats();
-    return { success: false, url, error: proxyErr.message };
+    return { success: false, error: e.message };
   }
 }
 
+// ======================== GLOBAL SEMAPHORE (FIX CONCURRENCY) ===========================
+function createSemaphore(limit) {
+  let active = 0;
+  const queue = [];
+
+  const acquire = () =>
+    new Promise((resolve) => {
+      const tryNow = () => {
+        if (active < limit) {
+          active++;
+          resolve(() => {
+            active--;
+            const next = queue.shift();
+            if (next) next();
+          });
+        } else queue.push(tryNow);
+      };
+      tryNow();
+    });
+
+  return { acquire };
+}
 
 // ======================== CONTINUOUS WORKER SYSTEM ===========================
+let urlPool = [];
+let urlIndex = 0;
+let isRunning = true;
+
+function updateUrlPool(newUrls) {
+  const normalized = [];
+  for (const raw of newUrls) {
+    const n = normalizeUrl(raw);
+    if (!n) continue;
+    // tetap simpan hanya allowlist
+    if (!isAllowedTarget(n)) continue;
+    normalized.push(n);
+  }
+
+  const merged = new Set(urlPool);
+  normalized.forEach((u) => merged.add(u));
+  urlPool = Array.from(merged);
+
+  return normalized.length;
+}
+
+function getNextBatch(size) {
+  if (urlPool.length === 0) return [];
+  const batch = [];
+  for (let i = 0; i < size; i++) {
+    if (urlIndex >= urlPool.length) urlIndex = 0;
+    batch.push(urlPool[urlIndex]);
+    urlIndex = (urlIndex + 1) % urlPool.length;
+  }
+  return batch;
+}
+
+async function fetchAndUpdateSource() {
+  const listResp = await fetchText(SOURCE_URL);
+  const urls = listResp.ok ? parseList(listResp.text) : [];
+
+  if (urls.length === 0) {
+    broadcastLog("📭 Source empty, will retry", "info");
+    return 0;
+  }
+
+  const added = updateUrlPool(urls);
+  broadcastLog(`📌 Loaded ${urls.length} URLs | allowlisted kept: ${added} | pool=${urlPool.length}`, "info");
+  return urls.length;
+}
+
 async function mainLoop() {
-  const WORKERS = 20;
-  const MAX_PARALLEL = 4;
-  const SOURCE_FETCH_INTERVAL = 30000; // 30 detik
-  const BATCH_DELAY = 50; // ms delay antar batch
+  const sem = createSemaphore(GLOBAL_MAX_INFLIGHT);
 
-  // Global URL pool dan index
-  let urlPool = [];
-  let urlIndex = 0;
-  let isRunning = true;
-
-  // Function untuk update URL pool
-  function updateUrlPool(newUrls) {
-    // Gabung dan hilangkan duplikat
-    const combined = [...new Set([...urlPool, ...newUrls])];
-    const addedCount = combined.length - urlPool.length;
-    urlPool = combined;
-    
-    if (addedCount > 0) {
-      broadcastLog(`📥 Added ${addedCount} new URLs. Total: ${urlPool.length}`, "info");
-    }
-    
-    return addedCount;
-  }
-
-  // Function untuk get next batch (circular)
-  function getNextBatch(size) {
-    if (urlPool.length === 0) return [];
-    
-    const batch = [];
-    for (let i = 0; i < size; i++) {
-      if (urlIndex >= urlPool.length) {
-        urlIndex = 0; // Kembali ke awal (circular)
-      }
-      batch.push(urlPool[urlIndex]);
-      urlIndex = (urlIndex + 1) % urlPool.length;
-    }
-    return batch;
-  }
-
-  // Continuous worker function
-  async function continuousWorker(workerId) {
+  async function worker(workerId) {
     broadcastLog(`🚀 Worker ${workerId} started`, "info");
-    
+
     while (isRunning) {
-      try {
-        // Jika tidak ada URL, tunggu sebentar
-        if (urlPool.length === 0) {
-          await new Promise(r => setTimeout(r, 1000));
-          continue;
-        }
-        
-        // Ambil batch URL
-        const batch = getNextBatch(MAX_PARALLEL);
-        
-        if (batch.length === 0) {
-          await new Promise(r => setTimeout(r, 100));
-          continue;
-        }
-        
-        // Proses batch secara paralel
-        const promises = batch.map(url => hitUrl(url));
-        await Promise.all(promises);
-        
-        // Delay kecil antar batch (rate limiting)
-        await new Promise(r => setTimeout(r, BATCH_DELAY));
-        
-      } catch (error) {
-        broadcastLog(`⚠️ Worker ${workerId} error: ${error.message}`, "error");
-        await new Promise(r => setTimeout(r, 5000)); // Tunggu 5 detik jika error
+      if (urlPool.length === 0) {
+        await sleep(500);
+        continue;
       }
-    }
-  }
 
-  // Function untuk fetch source dan update pool
-  async function fetchAndUpdateSource() {
-    try {
-      const listResp = await fetchText(SOURCE_URL);
-      const urls = listResp.ok ? parseList(listResp.text) : [];
-      
-      if (urls.length === 0) {
-        broadcastLog("📭 Source empty, will retry in 30 seconds", "info");
-        return 0;
-      }
-      
-      const added = updateUrlPool(urls);
-      if (added > 0 || urls.length > 0) {
-        broadcastLog(`📌 Loaded ${urls.length} URLs from source`, "info");
-      }
-      
-      return urls.length;
-      
-    } catch (error) {
-      broadcastLog(`❌ Error fetching source: ${error.message}`, "error");
-      return 0;
-    }
-  }
+      const batch = getNextBatch(MAX_PARALLEL);
 
-  // Start semua workers
-  broadcastLog(`🚀 Starting ${WORKERS} continuous workers...`, "info");
-  for (let i = 0; i < WORKERS; i++) {
-    // Start worker dengan sedikit stagger
-    setTimeout(() => {
-      continuousWorker(i).catch(err => {
-        broadcastLog(`❌ Worker ${i} crashed: ${err.message}`, "error");
+      const tasks = batch.map(async (u) => {
+        const release = await sem.acquire();
+        try {
+          await hitUrl(u);
+        } finally {
+          release();
+        }
       });
-    }, i * 100);
+
+      await Promise.allSettled(tasks);
+      await sleep(BATCH_DELAY);
+    }
   }
 
-  // Main loop untuk fetch source secara periodic
+  // start workers (stagger)
+  broadcastLog(`🚀 Starting ${WORKERS} workers | GLOBAL_MAX_INFLIGHT=${GLOBAL_MAX_INFLIGHT}`, "info");
+  for (let i = 0; i < WORKERS; i++) {
+    worker(i).catch((e) => broadcastLog(`❌ Worker ${i} crashed: ${e.message}`, "error"));
+    await sleep(100);
+  }
+
+  // periodic fetch loop
   while (isRunning) {
     try {
-      // Fetch source setiap 30 detik
       await fetchAndUpdateSource();
-      
-      // Broadcast stats secara periodic
       broadcastStats();
-      
-      // Tunggu 30 detik sebelum fetch lagi
-      await new Promise(r => setTimeout(r, SOURCE_FETCH_INTERVAL));
-      
-    } catch (error) {
-      broadcastLog(`❌ Main loop error: ${error.message}`, "error");
-      await new Promise(r => setTimeout(r, 10000));
+    } catch (e) {
+      broadcastLog(`❌ Source loop error: ${e.message}`, "error");
     }
+    await sleep(SOURCE_FETCH_INTERVAL);
   }
 }
+
 // ======================== DASHBOARD WEB ===========================
 const app = express();
+app.use(express.json({ limit: "256kb" }));
 
-app.get("/", (req, res) => {
-  res.send(`
+// ✅ Paste HTML kamu di sini tanpa diubah
+const DASHBOARD_HTML = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -2166,8 +2051,9 @@ app.get("/", (req, res) => {
   </script>
 </body>
 </html>
-  `);
-});
+`;
+
+app.get("/", (req, res) => res.send(DASHBOARD_HTML));
 
 // ======================== API ENDPOINTS ===========================
 app.get("/api/stats", (req, res) => {
@@ -2175,137 +2061,75 @@ app.get("/api/stats", (req, res) => {
     ...stats,
     successRate: stats.totalHits > 0 ? ((stats.success / stats.totalHits) * 100).toFixed(1) : "0.0",
     uniqueSuccess: successUrls.size,
-    uniqueFailed: failedUrls.size
+    uniqueFailed: failedUrls.size,
+    allowDomains: ALLOW_DOMAINS,
+    poolSize: urlPool.length,
+    activeProxy: PROXY_CONFIGS[activeProxyIndex]?.name
   });
 });
 
 app.get("/api/recent-urls", (req, res) => {
+  const limit = clampInt(req.query.limit, 100, 1, 500);
+
   const successArray = Array.from(successUrls.entries())
-    .slice(0, 100)
-    .map(([url, count]) => ({
-      url,
-      count
-    }));
-  
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([url, count]) => ({ url, count }));
+
   const failedArray = Array.from(failedUrls.entries())
-    .slice(0, 100)
-    .map(([url, count]) => ({
-      url,
-      count
-    }));
-  
-  res.json({
-    success: successArray,
-    failed: failedArray
-  });
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([url, count]) => ({ url, count }));
+
+  res.json({ success: successArray, failed: failedArray });
 });
 
-// API untuk proxy status
 app.get("/api/proxy-status", (req, res) => {
   const currentProxy = PROXY_CONFIGS[activeProxyIndex];
-  const proxyList = PROXY_CONFIGS.map((config, index) => ({
-    name: config.name,
-    url: config.url,
-    format: config.format,
-    isActive: index === activeProxyIndex,
-    index: index
-  }));
-  
   res.json({
-    currentProxy: currentProxy,
-    allProxies: proxyList,
+    currentProxy,
     activeIndex: activeProxyIndex,
-    totalProxies: PROXY_CONFIGS.length
+    totalProxies: PROXY_CONFIGS.length,
+    allProxies: PROXY_CONFIGS.map((p, i) => ({ ...p, isActive: i === activeProxyIndex, index: i }))
   });
 });
 
-// API untuk manual proxy switch
 app.post("/api/switch-proxy/:index", (req, res) => {
-  const index = parseInt(req.params.index);
-  if (index >= 0 && index < PROXY_CONFIGS.length) {
-    activeProxyIndex = index;
-    broadcastLog(`🔄 Manually switched to proxy: ${PROXY_CONFIGS[index].name}`, "info");
-    res.json({ 
-      success: true, 
-      message: `Switched to ${PROXY_CONFIGS[index].name}`,
-      proxy: PROXY_CONFIGS[index]
-    });
-  } else {
-    res.status(400).json({ success: false, error: "Invalid proxy index" });
+  const index = parseInt(req.params.index, 10);
+  if (Number.isNaN(index) || index < 0 || index >= PROXY_CONFIGS.length) {
+    return res.status(400).json({ success: false, error: "Invalid proxy index" });
   }
+  activeProxyIndex = index;
+  broadcastLog(`🔄 Manually switched to proxy: ${PROXY_CONFIGS[index].name}`, "info");
+  res.json({ success: true, proxy: PROXY_CONFIGS[index] });
 });
-// ======================== API UNTUK TEST URL SPESIFIK ===========================
+
+// Test URL (tetap allowlist)
 app.get("/api/test-url", async (req, res) => {
-  const url = req.query.url;
-  if (!url) {
-    return res.status(400).json({ error: "URL parameter required" });
-  }
-  
+  const raw = String(req.query.url || "");
+  const u = normalizeUrl(raw);
+  if (!u) return res.status(400).json({ error: "Invalid URL" });
+  if (!isAllowedTarget(u)) return res.status(403).json({ error: "URL not allowlisted" });
+
+  const direct = await fetchText(u);
+  const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isVerifyOkJson(direct.text);
+
+  let proxyResult = null;
   try {
-    console.log(`\n🧪 TESTING URL: ${url}`);
-    
-    // Test direct
-    const direct = await fetchText(url);
-    console.log(`Direct fetch:`);
-    console.log(`  Status: ${direct.status}`);
-    console.log(`  OK: ${direct.ok}`);
-    console.log(`  Text length: ${direct.text?.length || 0}`);
-    
-    // Parse JSON
-    let parsed = null;
-    if (direct.text) {
-      try {
-        parsed = JSON.parse(direct.text);
-        console.log(`  JSON parse successful`);
-      } catch (e) {
-        console.log(`  JSON parse failed: ${e.message}`);
-        // Coba dengan tryParseJson
-        parsed = tryParseJson(direct.text);
-        console.log(`  tryParseJson result: ${parsed ? 'success' : 'failed'}`);
-      }
-    }
-    
-    // Check criteria
-    const isCap = isCaptcha(direct.text);
-    const isVerify = isVerifyOkJson(direct.text);
-    const directOk = direct.ok && direct.status === 200 && !isCap && isVerify;
-    
-    console.log(`Criteria check:`);
-    console.log(`  isCaptcha: ${isCap}`);
-    console.log(`  isVerifyOkJson: ${isVerify}`);
-    console.log(`  directOk: ${directOk}`);
-    
-    // Test via proxy juga
-    console.log(`\nTesting with proxy...`);
-    const proxyInfo = await findWorkingProxy(url);
+    const proxyInfo = await findWorkingProxy(u);
     const proxied = await fetchText(proxyInfo.url);
-    
     const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isVerifyOkJson(proxied.text);
-    
-    res.json({
-      url: url,
-      direct: {
-        status: direct.status,
-        ok: direct.ok,
-        textLength: direct.text?.length,
-        isJson: parsed !== null,
-        isCaptcha: isCap,
-        isVerifyOkJson: isVerify,
-        directOk: directOk,
-        parsedKeys: parsed ? Object.keys(parsed).slice(0, 10) : []
-      },
-      proxy: {
-        name: proxyInfo.config.name,
-        status: proxied.status,
-        proxyOk: proxyOk
-      },
-      finalStatus: directOk || proxyOk ? "SUCCESS" : "FAILED"
-    });
-    
-  } catch (error) {
-    console.error(`Test error: ${error.message}`);
-    res.status(500).json({ error: error.message });
+    proxyResult = { name: proxyInfo.config.name, status: proxied.status, ok: proxyOk };
+  } catch (e) {
+    proxyResult = { error: e.message };
   }
+
+  res.json({
+    url: u,
+    direct: { status: direct.status, ok: directOk },
+    proxy: proxyResult,
+    finalStatus: directOk || proxyResult?.ok ? "SUCCESS" : "FAILED"
+  });
 });
 
 // ======================== SSE STREAM ===========================
@@ -2313,20 +2137,18 @@ app.get("/stream", (req, res) => {
   res.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
-    Connection: "keep-alive",
+    Connection: "keep-alive"
   });
 
-  res.flushHeaders();
+  res.flushHeaders?.();
   res.write(": connected\n\n");
 
   const client = { res };
   clients.push(client);
 
   req.on("close", () => {
-    const index = clients.indexOf(client);
-    if (index > -1) {
-      clients.splice(index, 1);
-    }
+    const idx = clients.indexOf(client);
+    if (idx > -1) clients.splice(idx, 1);
   });
 });
 
@@ -2335,8 +2157,12 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   broadcastLog(`🌐 LOCKDOWN SYSTEM ACTIVATED ON PORT ${PORT}`, "info");
-  broadcastLog(`🛡️ Proxy system initialized with ${PROXY_CONFIGS.length} proxies`, "info");
+  broadcastLog(`🛡️ Proxies: ${PROXY_CONFIGS.length} | Active: ${PROXY_CONFIGS[activeProxyIndex].name}`, "info");
+  broadcastLog(`✅ Allow domains: ${ALLOW_DOMAINS.join(", ")}`, "info");
 });
 
 // Start main loop
-mainLoop();
+mainLoop().catch((e) => {
+  console.error("mainLoop fatal:", e);
+  broadcastLog(`❌ mainLoop fatal: ${e.message}`, "error");
+});
