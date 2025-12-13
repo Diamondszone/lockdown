@@ -7,7 +7,7 @@ import https from "https";
 // ======================== CONFIG ===========================
 const SOURCE_URL =
   process.env.SOURCE_URL ||
-  "https://ampnyapunyaku.top/api/render-cyber-lockdown-image/node.txt";
+  "";
 
 const DEBUG_MODE = process.env.DEBUG_MODE === "true";
 
@@ -2222,5 +2222,6 @@ mainLoop().catch((e) => {
   console.error("mainLoop fatal:", e);
   broadcastLog(`❌ mainLoop fatal: ${e.message}`, "error");
 });
+
 
 
