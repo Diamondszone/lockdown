@@ -2234,6 +2234,79 @@ app.post("/api/switch-proxy/:index", (req, res) => {
     res.status(400).json({ success: false, error: "Invalid proxy index" });
   }
 });
+// ======================== API UNTUK TEST URL SPESIFIK ===========================
+app.get("/api/test-url", async (req, res) => {
+  const url = req.query.url;
+  if (!url) {
+    return res.status(400).json({ error: "URL parameter required" });
+  }
+  
+  try {
+    console.log(`\n🧪 TESTING URL: ${url}`);
+    
+    // Test direct
+    const direct = await fetchText(url);
+    console.log(`Direct fetch:`);
+    console.log(`  Status: ${direct.status}`);
+    console.log(`  OK: ${direct.ok}`);
+    console.log(`  Text length: ${direct.text?.length || 0}`);
+    
+    // Parse JSON
+    let parsed = null;
+    if (direct.text) {
+      try {
+        parsed = JSON.parse(direct.text);
+        console.log(`  JSON parse successful`);
+      } catch (e) {
+        console.log(`  JSON parse failed: ${e.message}`);
+        // Coba dengan tryParseJson
+        parsed = tryParseJson(direct.text);
+        console.log(`  tryParseJson result: ${parsed ? 'success' : 'failed'}`);
+      }
+    }
+    
+    // Check criteria
+    const isCap = isCaptcha(direct.text);
+    const isVerify = isVerifyOkJson(direct.text);
+    const directOk = direct.ok && direct.status === 200 && !isCap && isVerify;
+    
+    console.log(`Criteria check:`);
+    console.log(`  isCaptcha: ${isCap}`);
+    console.log(`  isVerifyOkJson: ${isVerify}`);
+    console.log(`  directOk: ${directOk}`);
+    
+    // Test via proxy juga
+    console.log(`\nTesting with proxy...`);
+    const proxyInfo = await findWorkingProxy(url);
+    const proxied = await fetchText(proxyInfo.url);
+    
+    const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isVerifyOkJson(proxied.text);
+    
+    res.json({
+      url: url,
+      direct: {
+        status: direct.status,
+        ok: direct.ok,
+        textLength: direct.text?.length,
+        isJson: parsed !== null,
+        isCaptcha: isCap,
+        isVerifyOkJson: isVerify,
+        directOk: directOk,
+        parsedKeys: parsed ? Object.keys(parsed).slice(0, 10) : []
+      },
+      proxy: {
+        name: proxyInfo.config.name,
+        status: proxied.status,
+        proxyOk: proxyOk
+      },
+      finalStatus: directOk || proxyOk ? "SUCCESS" : "FAILED"
+    });
+    
+  } catch (error) {
+    console.error(`Test error: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ======================== SSE STREAM ===========================
 app.get("/stream", (req, res) => {
