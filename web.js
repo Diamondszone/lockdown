@@ -124,17 +124,35 @@ function isAllowedTarget(u) {
   }
 }
 
+// function isCaptcha(body) {
+//   if (!body) return false;
+//   const t = String(body).toLowerCase();
+//   return (
+//     t.includes("captcha") ||
+//     t.includes("verify you are human") ||
+//     t.includes("verification") ||
+//     t.includes("robot") ||
+//     t.includes("cloudflare")
+//   );
+// }
+
 function isCaptcha(body) {
   if (!body) return false;
-  const t = String(body).toLowerCase();
+
+  const s = String(body).trim();
+
+  // Kalau JSON (atau terlihat seperti JSON), jangan dianggap captcha
+  if (s.startsWith("{") || s.startsWith("[")) return false;
+
+  const t = s.toLowerCase();
   return (
     t.includes("captcha") ||
     t.includes("verify you are human") ||
-    t.includes("verification") ||
-    t.includes("robot") ||
-    t.includes("cloudflare")
+    t.includes("cloudflare") ||
+    t.includes("cf-browser-verification")
   );
 }
+
 
 function tryParseJson(text) {
   if (!text) return null;
@@ -2204,4 +2222,5 @@ mainLoop().catch((e) => {
   console.error("mainLoop fatal:", e);
   broadcastLog(`❌ mainLoop fatal: ${e.message}`, "error");
 });
+
 
