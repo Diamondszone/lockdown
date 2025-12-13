@@ -36,32 +36,37 @@ const REQUEST_TIMEOUT_MS = clampInt(process.env.REQUEST_TIMEOUT_MS, 15000, 1000,
 
 // PROXY CONFIGS DENGAN FALLBACK (kamu minta format "single" jangan diubah)
 const PROXY_CONFIGS = [
+  //double = https://proxy.com/https://domain.com
+  //single = https://proxy.com/https:/domain.com
+  //encoded = https://api.allorigins.win/raw?url=encoded url
   {
-    url: process.env.PRIMARY_PROXY || "https://cors-anywhere-railway-production.up.railway.app",
-    name: "Railway Proxy",
-    format: "double"
-  },
-  {
-    url: process.env.SECONDARY_PROXY || "https://cors-anywhere-vercel-dzone.vercel.app",
-    name: "Vercel Proxy",
-    format: "single"
-  },
-  {
-    url: "https://api.allorigins.win/raw?url=",
-    name: "AllOrigins",
-    format: "encoded"
-  },
-  {
-    url: "https://frosty-salad-93de.marketinggithub.workers.dev",
-    name: "Cloudflare Worker Proxy",
-    format: "double"
-  },
-  {
-    url: "https://onme.cloud/proxy/proxy.php",
+    url: process.env.ONME_PROXY || "",
     name: "Onme cloud Proxy",
-    format: "double"
-  }
+    format: "double",
+  },
+  {
+    url: process.env.CF_WORKER_PROXY || "",
+    name: "Cloudflare Worker Proxy",
+    format: "double",
+  },
+  {
+    url: process.env.SECONDARY_PROXY || "",
+    name: "Vercel Proxy",
+    format: "single",
+  },
+  {
+    url: process.env.ALLORIGINS_PROXY || "",
+    name: "AllOrigins",
+    format: "encoded",
+  },
+  {
+    url: process.env.PRIMARY_PROXY || "",
+    name: "Railway Proxy",
+    format: "double",
+  },
 ];
+
+
 
 // ======================== PROXY MANAGEMENT ===========================
 let activeProxyIndex = 0;
@@ -2222,6 +2227,5 @@ mainLoop().catch((e) => {
   console.error("mainLoop fatal:", e);
   broadcastLog(`❌ mainLoop fatal: ${e.message}`, "error");
 });
-
 
 
