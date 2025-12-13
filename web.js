@@ -2106,31 +2106,69 @@ app.post("/api/switch-proxy/:index", (req, res) => {
 
 // Test URL (tetap allowlist)
 app.get("/api/test-url", async (req, res) => {
-  const raw = String(req.query.url || "");
-  const u = normalizeUrl(raw);
-  if (!u) return res.status(400).json({ error: "Invalid URL" });
-  if (!isAllowedTarget(u)) return res.status(403).json({ error: "URL not allowlisted" });
+  // Ambil URL utuh dari raw request (anti kepotong oleh &key=...&token=...)
+  const marker = "?url=";
+  const idx = req.originalUrl.indexOf(marker);
+  const raw = idx >= 0 ? req.originalUrl.slice(idx + marker.length) : "";
 
-  const direct = await fetchText(u);
-  const directOk = direct.ok && direct.status === 200 && !isCaptcha(direct.text) && isVerifyOkJson(direct.text);
+  let url = raw;
+  try { url = decodeURIComponent(raw); } catch {}
 
-  let proxyResult = null;
+  if (!url) return res.status(400).json({ error: "URL parameter required" });
+
+  // (optional) kalau masih ada spasi/newline
+  url = String(url).trim();
+
+  // Test direct
+  const direct = await fetchText(url);
+
+  // debug flags
+  const cap = isCaptcha(direct.text);
+  const verify = isVerifyOkJson(direct.text);
+
+  const directOk = direct.ok && direct.status === 200 && !cap && verify;
+
+  // Test proxy
+  let proxy = null;
   try {
-    const proxyInfo = await findWorkingProxy(u);
+    const proxyInfo = await findWorkingProxy(url);
     const proxied = await fetchText(proxyInfo.url);
-    const proxyOk = proxied.ok && proxied.status === 200 && !isCaptcha(proxied.text) && isVerifyOkJson(proxied.text);
-    proxyResult = { name: proxyInfo.config.name, status: proxied.status, ok: proxyOk };
+    const pCap = isCaptcha(proxied.text);
+    const pVerify = isVerifyOkJson(proxied.text);
+    const proxyOk = proxied.ok && proxied.status === 200 && !pCap && pVerify;
+
+    proxy = {
+      name: proxyInfo.config.name,
+      status: proxied.status,
+      ok: proxyOk,
+      isCaptcha: pCap,
+      isVerifyOkJson: pVerify,
+      // snippet biar kelihatan baliknya apa (pendek saja)
+      snippet: String(proxied.text || "").slice(0, 180)
+    };
   } catch (e) {
-    proxyResult = { error: e.message };
+    proxy = { error: e.message };
   }
 
   res.json({
-    url: u,
-    direct: { status: direct.status, ok: directOk },
-    proxy: proxyResult,
-    finalStatus: directOk || proxyResult?.ok ? "SUCCESS" : "FAILED"
+    // bantu pastikan URL yang dibaca server sudah utuh
+    received: {
+      rawAfterUrlEq: raw.slice(0, 220),
+      urlFromServer: url
+    },
+    url,
+    direct: {
+      status: direct.status,
+      ok: directOk,
+      isCaptcha: cap,
+      isVerifyOkJson: verify,
+      snippet: String(direct.text || "").slice(0, 180)
+    },
+    proxy,
+    finalStatus: directOk || proxy?.ok ? "SUCCESS" : "FAILED"
   });
 });
+
 
 // ======================== SSE STREAM ===========================
 app.get("/stream", (req, res) => {
@@ -2166,3 +2204,4 @@ mainLoop().catch((e) => {
   console.error("mainLoop fatal:", e);
   broadcastLog(`❌ mainLoop fatal: ${e.message}`, "error");
 });
+
